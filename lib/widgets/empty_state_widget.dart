@@ -22,83 +22,101 @@ class EmptyStateWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact =
+            constraints.maxHeight < 430 || constraints.maxWidth < 360;
+        final circleSize = compact ? 96.0 : 120.0;
+        final emojiSize = compact ? 48.0 : 60.0;
+        final freeEmojiSize = compact ? 64.0 : 80.0;
+        final titleSize = compact ? 22.0 : 26.0;
 
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(40),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Emoji with optional circle background
-            if (showCircle)
-              Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF9FCFBB).withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: Text(emoji, style: const TextStyle(fontSize: 60)),
-                ),
-              )
-            else
-              Text(emoji, style: const TextStyle(fontSize: 80)),
-
-            const SizedBox(height: 24),
-
-            // Title
-            Text(
-              title,
-              style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800),
-              textAlign: TextAlign.center,
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(32),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: constraints.maxHeight.isInfinite 
+                  ? 300 
+                  : constraints.maxHeight,
             ),
-
-            const SizedBox(height: 8),
-
-            // Subtitle
-            Text(
-              subtitle,
-              style: TextStyle(
-                fontSize: 16,
-                color: theme.textTheme.bodyMedium?.color?.withValues(
-                  alpha: 0.6,
-                ),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (showCircle)
+                    Container(
+                      width: circleSize,
+                      height: circleSize,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF9FCFBB).withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Center(
+                        child: Text(
+                          emoji,
+                          style: TextStyle(fontSize: emojiSize),
+                        ),
+                      ),
+                    )
+                  else
+                    Text(emoji, style: TextStyle(fontSize: freeEmojiSize)),
+                  SizedBox(height: compact ? 18 : 24),
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: titleSize,
+                      fontWeight: FontWeight.w800,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: theme.textTheme.bodyMedium?.color?.withValues(
+                        alpha: 0.6,
+                      ),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  if (buttonText != null && onButtonPressed != null) ...[
+                    const SizedBox(height: 32),
+                    ElevatedButton.icon(
+                      onPressed: onButtonPressed,
+                      icon: const Icon(Icons.add_circle_outline, size: 24),
+                      label: Text(
+                        buttonText!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF9FCFBB),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 32,
+                          vertical: 18,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        elevation: 4,
+                        shadowColor: const Color(
+                          0xFF9FCFBB,
+                        ).withValues(alpha: 0.4),
+                      ),
+                    ),
+                  ],
+                ],
               ),
-              textAlign: TextAlign.center,
             ),
-
-            // Optional button
-            if (buttonText != null && onButtonPressed != null) ...[
-              const SizedBox(height: 32),
-              ElevatedButton.icon(
-                onPressed: onButtonPressed,
-                icon: const Icon(Icons.add_circle_outline, size: 24),
-                label: Text(
-                  buttonText!,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF9FCFBB),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 32,
-                    vertical: 18,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  elevation: 4,
-                  shadowColor: const Color(0xFF9FCFBB).withValues(alpha: 0.4),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }

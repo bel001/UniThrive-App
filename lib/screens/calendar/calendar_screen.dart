@@ -2,8 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../../models/schedule.dart';
 import '../../services/calendar_sync_service.dart';
+import '../../services/voice_schedule_parser.dart';
 import '../../state/app_state.dart';
+import '../../widgets/empty_state_widget.dart';
+import '../../widgets/global_search_sheet.dart';
 import '../../widgets/uni_primary_button.dart';
+import '../../widgets/voice_schedule_sheet.dart';
+import '../alarms/alarm_screen.dart';
 
 const _calendarAccent = Color(0xFF9FCFBB); // verde menta para botones activos
 const _calendarAccentDark = Color(0xFF7FB5A0); // variante en modo oscuro
@@ -22,74 +27,96 @@ class _CalendarScreenState extends State<CalendarScreen> {
   DateTime _focusedMonth = DateTime(DateTime.now().year, DateTime.now().month);
   bool _hideWeekends = false;
   bool _monthlyView = false;
+  final VoiceScheduleParser _scheduleParser = const VoiceScheduleParser();
 
   @override
   Widget build(BuildContext context) {
     final appState = AppStateProvider.of(context);
     final blocks = appState.blocksForDay(_selectedDay);
+    final startOfWeek = DateTime(
+      _selectedDay.year,
+      _selectedDay.month,
+      _selectedDay.day,
+    ).subtract(Duration(days: _selectedDay.weekday - 1));
+    final weekBlocks = appState.blocksForRange(
+      startOfWeek,
+      startOfWeek.add(const Duration(days: 7)),
+    );
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Mi Horario Semanal'),
         actions: [
-          TextButton(
-            onPressed: () => _promptOrganize(appState),
-            child: const Text('Organízate'),
+          IconButton(
+            tooltip: 'Hoy',
+            icon: const Icon(Icons.today_rounded),
+            onPressed: () => setState(() {
+              _selectedDay = DateTime.now();
+              _focusedMonth = DateTime(DateTime.now().year, DateTime.now().month);
+            }),
           ),
           IconButton(
-            tooltip: 'Sincronizar',
-            onPressed: () => _openCalendarSync(context, appState),
-            icon: const Icon(Icons.sync_alt_outlined),
+            tooltip: 'Dictar horario',
+            icon: const Icon(Icons.mic_rounded),
+            onPressed: () => showVoiceScheduleSheet(
+              context,
+              referenceDay: _selectedDay,
+            ),
+          ),
+          PopupMenuButton<_CalendarAction>(
+            icon: const Icon(Icons.more_vert_rounded),
+            onSelected: (action) => _handleCalendarAction(action, appState),
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: _CalendarAction.organize,
+                child: Text('Organízate'),
+              ),
+              PopupMenuItem(
+                value: _CalendarAction.search,
+                child: Text('Buscar'),
+              ),
+              PopupMenuItem(
+                value: _CalendarAction.alarm,
+                child: Text('Alarmas'),
+              ),
+              PopupMenuItem(
+                value: _CalendarAction.sync,
+                child: Text('Sincronizar'),
+              ),
+            ],
           ),
         ],
       ),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Ocultar fin de semana'),
-                Switch(
-                  value: _hideWeekends,
-                  onChanged: (value) => setState(() => _hideWeekends = value),
-                ),
-              ],
+          _buildCalendarControls(),
+          const SizedBox(height: 8),
+          Expanded(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) {
+                return FadeTransition(
+                  opacity: animation,
+                  child: child,
+                );
+              },
+              child: _monthlyView
+                  ? KeyedSubtree(
+                      key: const ValueKey('monthly'),
+                      child: _buildMonthGrid(appState.blocksForMonth(_focusedMonth)),
+                    )
+                  : KeyedSubtree(
+                      key: const ValueKey('weekly'),
+                      child: _buildWeekBody(blocks, weekBlocks),
+                    ),
             ),
           ),
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Wrap(
-              spacing: 12,
-              runSpacing: 8,
-              children: [
-                _viewModeChip(
-                  label: 'Semana',
-                  selected: !_monthlyView,
-                  onPressed: () => setState(() => _monthlyView = false),
-                ),
-                _viewModeChip(
-                  label: 'Mes',
-                  selected: _monthlyView,
-                  onPressed: () => setState(() => _monthlyView = true),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (_monthlyView)
-            Expanded(child: _buildMonthGrid(appState.scheduleBlocks))
-          else ...[
-            _buildDaySelector(),
-            const SizedBox(height: 12),
-            Expanded(child: _buildScheduleList(blocks)),
-          ],
         ],
       ),
       floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 130), // Avoid bottom nav bar
+        padding: const EdgeInsets.only(bottom: 80),
         child: FloatingActionButton(
           backgroundColor: Theme.of(context).colorScheme.primary,
           child: const Icon(Icons.add),
@@ -99,35 +126,213 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  ChoiceChip _viewModeChip({
-    required String label,
-    required bool selected,
-    required VoidCallback onPressed,
-  }) {
+  Widget _buildCalendarControls() {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final activeColor = isDark ? _calendarAccentDark : _calendarAccent;
-    final inactiveBg = isDark ? _chipBgDark : _chipBgLight;
-    final inactiveText = isDark ? Colors.white70 : const Color(0xFF4B5563);
-    return ChoiceChip(
-      label: Text(label),
-      selected: selected,
-      onSelected: (_) => onPressed(),
-      labelStyle: TextStyle(
-        fontWeight: FontWeight.w600,
-        color: selected ? Colors.white : inactiveText,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              // Segmented Control
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainer,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    children: [
+                      _buildSegmentButton(
+                        label: 'Semana',
+                        isSelected: !_monthlyView,
+                        onTap: () => setState(() => _monthlyView = false),
+                        theme: theme,
+                        isDark: isDark,
+                      ),
+                      const SizedBox(width: 4),
+                      _buildSegmentButton(
+                        label: 'Mes',
+                        isSelected: _monthlyView,
+                        onTap: () => setState(() => _monthlyView = true),
+                        theme: theme,
+                        isDark: isDark,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Toggle Weekends
+              Tooltip(
+                message: _hideWeekends ? 'Mostrar fines de semana' : 'Ocultar fines de semana',
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => setState(() => _hideWeekends = !_hideWeekends),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: _hideWeekends
+                            ? theme.colorScheme.primaryContainer
+                            : theme.colorScheme.surfaceContainer,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        _hideWeekends ? Icons.weekend : Icons.weekend_outlined,
+                        size: 20,
+                        color: _hideWeekends
+                            ? theme.colorScheme.primary
+                            : theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
-      backgroundColor: inactiveBg,
-      selectedColor: activeColor,
-      side: BorderSide(
-        color: selected
-            ? Colors.transparent
-            : inactiveText.withValues(alpha: 0.35),
-      ),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
   }
+
+  Widget _buildSegmentButton({
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+    required ThemeData theme,
+    required bool isDark,
+  }) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? (isDark ? _calendarAccentDark : _calendarAccent)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: (isDark ? _calendarAccentDark : _calendarAccent)
+                          .withValues(alpha: 0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: theme.textTheme.labelLarge?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: isSelected
+                    ? Colors.white
+                    : theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWeekBody(
+    List<ScheduleBlock> blocks,
+    List<ScheduleBlock> weekBlocks,
+  ) {
+    final appState = AppStateProvider.of(context);
+    final normalized = _uniqueBlocks(blocks)
+      ..sort((a, b) => a.start.compareTo(b.start));
+    final conflictColors = _conflictHighlights(normalized);
+
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 128),
+      children: [
+        _buildDaySelector(),
+        const SizedBox(height: 12),
+        if (normalized.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: EmptyStateWidget(
+              emoji: '📅',
+              title: 'Día sin bloques',
+              subtitle:
+                  'Puedes dictar tu horario, pegar texto del syllabus o crear una clase manual desde el calendario.',
+              buttonText: 'DICTAR HORARIO',
+              onButtonPressed: () =>
+                  showVoiceScheduleSheet(context, referenceDay: _selectedDay),
+            ),
+          )
+        else
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Column(
+              children: normalized.map((block) {
+                final allowDurationEdit = _canStretchDuration(block);
+                return _ScheduleCard(
+                  block: block,
+                  onEdit: () =>
+                      _showClassSheet(appState: appState, block: block),
+                  onDelete: () => appState.removeScheduleBlock(block.id),
+                  onReschedule: () => _rescheduleBlock(block),
+                  onDuplicate: () {
+                    final copy = appState.duplicateScheduleBlock(block.id);
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          copy == null
+                              ? 'No se pudo duplicar este bloque.'
+                              : 'Bloque duplicado para la próxima semana.',
+                        ),
+                      ),
+                    );
+                  },
+                  onAdjustDuration: allowDurationEdit
+                      ? () => _adjustBlockDuration(block)
+                      : null,
+                  conflictColor: conflictColors[block.id],
+                );
+              }).toList(),
+            ),
+          ),
+      ],
+    );
+  }
+
+  void _handleCalendarAction(_CalendarAction action, AppState appState) {
+    switch (action) {
+      case _CalendarAction.organize:
+        _promptOrganize(appState);
+        break;
+      case _CalendarAction.search:
+        showGlobalSearchSheet(context);
+        break;
+      case _CalendarAction.voice:
+        showVoiceScheduleSheet(context, referenceDay: _selectedDay);
+        break;
+      case _CalendarAction.sync:
+        _openCalendarSync(context, appState);
+        break;
+      case _CalendarAction.alarm:
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const AlarmScreen()),
+        );
+        break;
+    }
+  }
+
+
 
   Widget _buildDaySelector() {
     final weekDays = ['L', 'M', 'Mi', 'J', 'V', 'S', 'D'];
@@ -207,38 +412,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  Widget _buildScheduleList(List<ScheduleBlock> blocks) {
-    final appState = AppStateProvider.of(context);
-    if (blocks.isEmpty) {
-      return Center(
-        child: Text(
-          'No hay clases programadas para este día.',
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-      );
-    }
-    final normalized = _uniqueBlocks(blocks)
-      ..sort((a, b) => a.start.compareTo(b.start));
-    final conflictColors = _conflictHighlights(normalized);
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      itemCount: normalized.length,
-      itemBuilder: (context, index) {
-        final block = normalized[index];
-        final allowDurationEdit = _canStretchDuration(block);
-        return _ScheduleCard(
-          block: block,
-          onEdit: () => _showClassSheet(appState: appState, block: block),
-          onDelete: () => appState.removeScheduleBlock(block.id),
-          onReschedule: () => _rescheduleBlock(block),
-          onAdjustDuration: allowDurationEdit
-              ? () => _adjustBlockDuration(block)
-              : null,
-          conflictColor: conflictColors[block.id],
-        );
-      },
-    );
-  }
 
   Widget _buildMonthGrid(List<ScheduleBlock> allBlocks) {
     final theme = Theme.of(context);
@@ -586,6 +759,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
   bool _isSameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
 
+  DateTime startOfDay(DateTime value) =>
+      DateTime(value.year, value.month, value.day);
+
   String _timeWindowLabel(ScheduleBlock block) {
     final localizations = MaterialLocalizations.of(context);
     final startLabel = localizations.formatTimeOfDay(
@@ -682,20 +858,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 title: const Text('Exportar semana completa'),
                 onTap: () async {
                   Navigator.of(sheetContext).pop();
-                  final startOfWeek = _selectedDay.subtract(
-                    Duration(days: _selectedDay.weekday - 1),
+                  final startOfWeek = DateTime(
+                    _selectedDay.year,
+                    _selectedDay.month,
+                    _selectedDay.day,
+                  ).subtract(Duration(days: _selectedDay.weekday - 1));
+                  final weekBlocks = appState.blocksForRange(
+                    startOfWeek,
+                    startOfWeek.add(const Duration(days: 7)),
                   );
-                  final weekBlocks = appState.scheduleBlocks
-                      .where(
-                        (block) =>
-                            block.start.isAfter(
-                              startOfWeek.subtract(const Duration(seconds: 1)),
-                            ) &&
-                            block.start.isBefore(
-                              startOfWeek.add(const Duration(days: 7)),
-                            ),
-                      )
-                      .toList();
                   await CalendarSyncService.exportBlocks(
                     context: context,
                     blocks: weekBlocks,
@@ -710,6 +881,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 onTap: () {
                   Navigator.of(sheetContext).pop();
                   _promptImportIcs(context, appState);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.notes_rounded),
+                title: const Text('Importar desde texto'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _promptImportText(context, appState);
                 },
               ),
             ],
@@ -764,6 +943,80 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
   }
 
+  Future<void> _promptImportText(
+    BuildContext context,
+    AppState appState,
+  ) async {
+    final controller = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Pegar horario en texto'),
+        content: TextField(
+          controller: controller,
+          maxLines: 10,
+          decoration: const InputDecoration(
+            hintText:
+                'Una línea por clase.\nEj:\nFísica lunes y miércoles de 8 a 10 en aula B203 hasta julio',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Importar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || controller.text.trim().isEmpty) return;
+
+    var imported = 0;
+    final lines = controller.text
+        .split('\n')
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty);
+    for (final line in lines) {
+      final draft = _scheduleParser.parse(line, referenceTime: _selectedDay);
+      if (!draft.canSave) continue;
+      final weekDays = [...draft.weekDays]..sort();
+      final anchorStart = weekDays.contains(draft.firstStart.weekday)
+          ? draft.firstStart
+          : _dateForWeekday(weekDays.first, reference: draft.firstStart);
+      final duration = draft.firstEnd.difference(draft.firstStart);
+      appState.addScheduleBlock(
+        title: draft.title,
+        start: anchorStart,
+        end: anchorStart.add(duration),
+        color: const Color(0xFF85D1F7),
+        location: draft.location,
+        category: ScheduleCategory.classSession,
+        recurrence: weekDays.length > 1
+            ? RecurrenceType.custom
+            : RecurrenceType.weekly,
+        recurrenceEndDate: draft.recurrenceEndDate,
+        recurrenceGroupId: weekDays.length > 1
+            ? 'text-series-${DateTime.now().millisecondsSinceEpoch}-$imported'
+            : null,
+        customWeekDays: weekDays.length > 1 ? weekDays : null,
+      );
+      imported++;
+    }
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          imported == 0
+              ? 'No pude interpretar las líneas pegadas.'
+              : 'Importadas $imported clase(s) desde texto.',
+        ),
+      ),
+    );
+  }
+
   Future<void> _showClassSheet({
     required AppState appState,
     ScheduleBlock? block,
@@ -782,9 +1035,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
     TimeOfDay endTime = editingBlock != null
         ? TimeOfDay.fromDateTime(editingBlock.end)
         : const TimeOfDay(hour: 11, minute: 0);
+    final bool editingCustomSeries =
+        editingBlock?.recurrence == RecurrenceType.custom &&
+        (editingBlock?.customWeekDays?.isNotEmpty ?? false);
     final Set<int> selectedDays = editingBlock == null
         ? {_selectedDay.weekday}
-        : {editingBlock.start.weekday};
+        : {
+            ...(editingCustomSeries
+                ? (editingBlock.customWeekDays ?? [editingBlock.start.weekday])
+                : [editingBlock.start.weekday]),
+          };
     int selectedDay = editingBlock?.start.weekday ?? _selectedDay.weekday;
     ScheduleCategory sheetCategory =
         editingBlock?.category ?? ScheduleCategory.classSession;
@@ -890,7 +1150,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         const labels = ['L', 'M', 'Mi', 'J', 'V', 'S', 'D'];
                         final weekday = index + 1;
                         final active = isEditing
-                            ? selectedDay == weekday
+                            ? (editingCustomSeries
+                                  ? selectedDays.contains(weekday)
+                                  : selectedDay == weekday)
                             : selectedDays.contains(weekday);
                         return ChoiceChip(
                           selected: active,
@@ -923,7 +1185,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           ),
                           onSelected: (_) => setSheetState(() {
                             if (isEditing) {
-                              selectedDay = weekday;
+                              if (editingCustomSeries) {
+                                if (active && selectedDays.length > 1) {
+                                  selectedDays.remove(weekday);
+                                } else if (!active) {
+                                  selectedDays.add(weekday);
+                                }
+                              } else {
+                                selectedDay = weekday;
+                              }
                             } else {
                               if (active) {
                                 selectedDays.remove(weekday);
@@ -1046,8 +1316,19 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                   ? 'Edificio B, Aula 101'
                                   : locationController.text.trim();
                               if (editingBlock != null) {
+                                final effectiveDays = editingCustomSeries
+                                    ? (selectedDays.isEmpty
+                                          ? {editingBlock.start.weekday}
+                                          : selectedDays)
+                                    : {selectedDay};
+                                final anchorWeekday =
+                                    effectiveDays.contains(
+                                      editingBlock.start.weekday,
+                                    )
+                                    ? editingBlock.start.weekday
+                                    : (effectiveDays.toList()..sort()).first;
                                 final date = _dateForWeekday(
-                                  selectedDay,
+                                  anchorWeekday,
                                   reference: editingBlock.start,
                                 );
                                 final start = DateTime(
@@ -1071,6 +1352,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                   end: end,
                                   location: location,
                                   category: sheetCategory,
+                                  recurrence: editingCustomSeries
+                                      ? (effectiveDays.length > 1
+                                            ? RecurrenceType.custom
+                                            : RecurrenceType.weekly)
+                                      : editingBlock.recurrence,
+                                  customWeekDays: editingCustomSeries
+                                      ? (effectiveDays.toList()..sort())
+                                      : editingBlock.customWeekDays,
                                 );
                               } else {
                                 final days = selectedDays.isEmpty
@@ -1164,6 +1453,7 @@ class _ScheduleCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onReschedule;
+  final VoidCallback onDuplicate;
   final Color? conflictColor;
   final VoidCallback? onAdjustDuration;
   const _ScheduleCard({
@@ -1171,6 +1461,7 @@ class _ScheduleCard extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onReschedule,
+    required this.onDuplicate,
     this.conflictColor,
     this.onAdjustDuration,
   });
@@ -1313,6 +1604,14 @@ class _ScheduleCard extends StatelessWidget {
                   onReschedule();
                 },
               ),
+              ListTile(
+                leading: const Icon(Icons.copy_all_rounded),
+                title: const Text('Duplicar la próxima semana'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  onDuplicate();
+                },
+              ),
               if (onAdjustDuration != null)
                 ListTile(
                   leading: const Icon(Icons.timer_outlined),
@@ -1342,6 +1641,8 @@ class _ScheduleCard extends StatelessWidget {
 }
 
 enum _OrganizeScope { day, month }
+
+enum _CalendarAction { organize, search, voice, sync, alarm }
 
 String _categoryLabel(ScheduleCategory category) {
   switch (category) {
@@ -1563,11 +1864,21 @@ class _TimePickerField extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             alignment: Alignment.centerLeft,
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(value.format(context), style: theme.textTheme.bodyLarge),
+                Expanded(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      value.format(context),
+                      style: theme.textTheme.bodyLarge,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
                 Icon(
                   Icons.access_time_outlined,
+                  size: 18,
                   color: theme.colorScheme.primary,
                 ),
               ],

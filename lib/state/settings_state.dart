@@ -9,6 +9,9 @@ class SettingsState extends ChangeNotifier {
   int _reminderLeadMinutes = 15;
   double _textScale = 1.0;
   String _alarmSound = 'Clásico';
+  bool _voiceAiEnabled = false;
+  String _voiceAiEndpointUrl = '';
+  String _voiceAiProxyToken = '';
 
   ThemeMode get themeMode => _themeMode;
   bool get motivationalMessages => _motivationalMessages;
@@ -17,6 +20,9 @@ class SettingsState extends ChangeNotifier {
   int get reminderLeadMinutes => _reminderLeadMinutes;
   double get textScale => _textScale;
   String get alarmSound => _alarmSound;
+  bool get voiceAiEnabled => _voiceAiEnabled;
+  String get voiceAiEndpointUrl => _voiceAiEndpointUrl;
+  String get voiceAiProxyToken => _voiceAiProxyToken;
 
   void loadFromMap(Map<String, dynamic> map) {
     if (map['themeMode'] != null) {
@@ -31,6 +37,11 @@ class SettingsState extends ChangeNotifier {
     _reminderLeadMinutes = map['reminderLeadMinutes'] ?? 15;
     _textScale = (map['textScale'] as num?)?.toDouble() ?? 1.0;
     _alarmSound = map['alarmSound'] ?? 'Clásico';
+    _voiceAiEndpointUrl = map['voiceAiEndpointUrl'] ?? '';
+    _voiceAiProxyToken = map['voiceAiProxyToken'] ?? '';
+    _voiceAiEnabled =
+        (map['voiceAiEnabled'] ?? false) && _voiceAiEndpointUrl.isNotEmpty;
+    NotificationService.setDefaultLeadMinutes(_reminderLeadMinutes);
     notifyListeners();
   }
 
@@ -43,6 +54,9 @@ class SettingsState extends ChangeNotifier {
       'reminderLeadMinutes': _reminderLeadMinutes,
       'textScale': _textScale,
       'alarmSound': _alarmSound,
+      'voiceAiEnabled': _voiceAiEnabled,
+      'voiceAiEndpointUrl': _voiceAiEndpointUrl,
+      'voiceAiProxyToken': _voiceAiProxyToken,
     };
   }
 
@@ -75,6 +89,12 @@ class SettingsState extends ChangeNotifier {
     _taskRemindersEnabled = true;
     _classRemindersEnabled = true;
     _motivationalMessages = true;
+    _reminderLeadMinutes = 15;
+    _alarmSound = 'Clásico';
+    _voiceAiEnabled = false;
+    _voiceAiEndpointUrl = '';
+    _voiceAiProxyToken = '';
+    NotificationService.setDefaultLeadMinutes(_reminderLeadMinutes);
     notifyListeners();
   }
 
@@ -106,6 +126,31 @@ class SettingsState extends ChangeNotifier {
   void setAlarmSound(String sound) {
     if (_alarmSound == sound) return;
     _alarmSound = sound;
+    notifyListeners();
+  }
+
+  void setVoiceAiEnabled(bool enabled) {
+    if (enabled && _voiceAiEndpointUrl.isEmpty) return;
+    if (_voiceAiEnabled == enabled) return;
+    _voiceAiEnabled = enabled;
+    notifyListeners();
+  }
+
+  void updateVoiceAiConfig({
+    required String endpointUrl,
+    required String proxyToken,
+  }) {
+    final normalizedEndpoint = endpointUrl.trim();
+    final normalizedToken = proxyToken.trim();
+    if (_voiceAiEndpointUrl == normalizedEndpoint &&
+        _voiceAiProxyToken == normalizedToken) {
+      return;
+    }
+    _voiceAiEndpointUrl = normalizedEndpoint;
+    _voiceAiProxyToken = normalizedToken;
+    if (_voiceAiEndpointUrl.isEmpty) {
+      _voiceAiEnabled = false;
+    }
     notifyListeners();
   }
 }

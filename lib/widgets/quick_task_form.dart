@@ -1,10 +1,11 @@
 import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import '../../state/app_state.dart';
 import '../../models/task.dart';
 import '../../models/project.dart';
 import '../../core/design_tokens.dart';
+import '../../utils/attachment_picker.dart';
 
 class QuickTaskForm extends StatefulWidget {
   final Project? initialProject;
@@ -19,11 +20,12 @@ class QuickTaskForm extends StatefulWidget {
 class _QuickTaskFormState extends State<QuickTaskForm> {
   late TextEditingController _titleController;
   late TextEditingController _descriptionController;
+  late TextEditingController _labelsController;
   late EnergyLevel _selectedEnergy;
+  late TaskPriority _selectedPriority;
   late String _selectedCategory;
   late DateTime _selectedDate;
   String? _selectedImagePath;
-  final ImagePicker _picker = ImagePicker();
 
   final List<String> _categories = ['📚', '💼', '🎨', '🏃', '💡', '🔬'];
 
@@ -37,8 +39,12 @@ class _QuickTaskFormState extends State<QuickTaskForm> {
     _descriptionController = TextEditingController(
       text: task?.description ?? '',
     );
+    _labelsController = TextEditingController(
+      text: task?.labels.join(', ') ?? '',
+    );
     _selectedImagePath = task?.attachmentPath;
     _selectedEnergy = task?.energy ?? EnergyLevel.medium;
+    _selectedPriority = task?.priority ?? TaskPriority.medium;
 
     if (task != null) {
       _selectedCategory = _categories.firstWhere(
@@ -65,6 +71,7 @@ class _QuickTaskFormState extends State<QuickTaskForm> {
   void dispose() {
     _titleController.dispose();
     _descriptionController.dispose();
+    _labelsController.dispose();
     super.dispose();
   }
 
@@ -74,19 +81,22 @@ class _QuickTaskFormState extends State<QuickTaskForm> {
     final appState = AppStateProvider.of(context);
     final isEditing = widget.initialTask != null;
 
-    return Container(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-        left: DesignTokens.screenHorizontal,
-        right: DesignTokens.screenHorizontal,
-        top: DesignTokens.screenHorizontal,
+    return ClipRRect(
+      borderRadius: BorderRadius.vertical(
+        top: Radius.circular(DesignTokens.radiusXLarge),
       ),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.vertical(
-          top: Radius.circular(DesignTokens.radiusXLarge),
-        ),
-        border: Border(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        child: Container(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+            left: DesignTokens.screenHorizontal,
+            right: DesignTokens.screenHorizontal,
+            top: DesignTokens.screenHorizontal,
+          ),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface.withValues(alpha: 0.85),
+            border: Border(
           top: BorderSide(
             color: theme.colorScheme.primary.withValues(alpha: 0.3),
             width: 3,
@@ -111,13 +121,23 @@ class _QuickTaskFormState extends State<QuickTaskForm> {
             ),
             SizedBox(height: DesignTokens.sectionGap),
 
-            // Title
-            Text(
-              isEditing ? 'Editar Tarea' : 'Nueva Tarea Rápida',
-              style: theme.textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w800,
-                color: theme.colorScheme.primary,
-              ),
+            // Title and Close Button
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  isEditing ? 'Editar Tarea' : 'Nueva Tarea Rápida',
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded),
+                  tooltip: 'Cerrar',
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
             ),
             const SizedBox(height: 24),
 
@@ -170,56 +190,57 @@ class _QuickTaskFormState extends State<QuickTaskForm> {
             ),
             const SizedBox(height: 24),
 
-            // Image Attachment
+            // Attachment
             if (_selectedImagePath != null)
-              Stack(
-                children: [
-                  Container(
-                    height: 150,
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(16),
-                      image: DecorationImage(
-                        image: FileImage(File(_selectedImagePath!)),
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: GestureDetector(
-                      onTap: () => setState(() => _selectedImagePath = null),
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: const BoxDecoration(
-                          color: Colors.black54,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.close,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+              _AttachmentPreview(
+                value: _selectedImagePath!,
+                onRemove: () => setState(() => _selectedImagePath = null),
               )
             else
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: _pickImage,
-                  icon: const Icon(Icons.add_photo_alternate_outlined),
-                  label: const Text('Adjuntar foto'),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final compact = constraints.maxWidth < 320;
+                  final actions = [
+                    _AttachmentAction(
+                      icon: Icons.add_photo_alternate_outlined,
+                      label: 'Foto',
+                      onTap: _pickImage,
                     ),
-                  ),
-                ),
+                    _AttachmentAction(
+                      icon: Icons.attach_file_rounded,
+                      label: 'Archivo',
+                      onTap: _pickFile,
+                    ),
+                    _AttachmentAction(
+                      icon: Icons.link_rounded,
+                      label: 'Link',
+                      onTap: _addLink,
+                    ),
+                  ];
+                  if (compact) {
+                    return Column(
+                      children: actions
+                          .map(
+                            (action) => Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: action,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    );
+                  }
+                  return Row(
+                    children: [
+                      for (var i = 0; i < actions.length; i++) ...[
+                        Expanded(child: actions[i]),
+                        if (i != actions.length - 1) const SizedBox(width: 10),
+                      ],
+                    ],
+                  );
+                },
               ),
             const SizedBox(height: 24),
 
@@ -329,6 +350,49 @@ class _QuickTaskFormState extends State<QuickTaskForm> {
             ),
             const SizedBox(height: 24),
 
+            const Text(
+              'Prioridad',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: TaskPriority.values.map((priority) {
+                final selected = _selectedPriority == priority;
+                final color = _priorityColor(priority);
+                return ChoiceChip(
+                  label: Text(priority.priorityLabel),
+                  selected: selected,
+                  selectedColor: color.withValues(alpha: 0.18),
+                  labelStyle: TextStyle(
+                    color: selected ? color : Colors.grey.shade700,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  onSelected: (_) =>
+                      setState(() => _selectedPriority = priority),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 24),
+
+            TextField(
+              controller: _labelsController,
+              decoration: InputDecoration(
+                hintText: 'Etiquetas separadas por coma',
+                prefixIcon: const Icon(Icons.sell_outlined),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide.none,
+                ),
+                filled: true,
+                fillColor: theme.colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.5,
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+
             // Date Selection
             Row(
               children: [
@@ -402,13 +466,19 @@ class _QuickTaskFormState extends State<QuickTaskForm> {
           ],
         ),
       ),
-    );
+    )));
   }
 
   void _saveTask(BuildContext context, AppState appState) {
     if (_titleController.text.isEmpty) return;
 
     final title = '$_selectedCategory ${_titleController.text}';
+    final labels = _labelsController.text
+        .split(',')
+        .map((label) => label.trim())
+        .where((label) => label.isNotEmpty)
+        .toSet()
+        .toList();
 
     if (widget.initialTask != null) {
       // Edit existing task
@@ -416,7 +486,9 @@ class _QuickTaskFormState extends State<QuickTaskForm> {
         taskId: widget.initialTask!.id,
         title: title,
         energy: _selectedEnergy,
+        priority: _selectedPriority,
         dueDate: _selectedDate,
+        labels: labels,
         description: _descriptionController.text.trim().isEmpty
             ? null
             : _descriptionController.text.trim(),
@@ -430,7 +502,9 @@ class _QuickTaskFormState extends State<QuickTaskForm> {
         projectId: project.id,
         title: title,
         energy: _selectedEnergy,
+        priority: _selectedPriority,
         dueDate: _selectedDate,
+        labels: labels,
         description: _descriptionController.text.trim().isEmpty
             ? null
             : _descriptionController.text.trim(),
@@ -442,19 +516,149 @@ class _QuickTaskFormState extends State<QuickTaskForm> {
   }
 
   Future<void> _pickImage() async {
-    try {
-      final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-      if (image != null) {
-        setState(() => _selectedImagePath = image.path);
-      }
-    } catch (e) {
-      // Handle permission errors or other issues
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No se pudo cargar la imagen')),
-        );
-      }
+    final image = await AttachmentPicker.pickImage();
+    if (!mounted || image == null) return;
+    setState(() => _selectedImagePath = image);
+  }
+
+  Future<void> _pickFile() async {
+    final file = await AttachmentPicker.pickAnyFile();
+    if (!mounted || file == null) return;
+    setState(() => _selectedImagePath = file);
+  }
+
+  Future<void> _addLink() async {
+    final controller = TextEditingController();
+    final link = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Agregar enlace'),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.url,
+          decoration: const InputDecoration(
+            hintText: 'https://...',
+            prefixIcon: Icon(Icons.link_rounded),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(controller.text.trim()),
+            child: const Text('Agregar'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || link == null || link.isEmpty) return;
+    final saved = await AttachmentPicker.saveLink(link);
+    setState(() => _selectedImagePath = saved);
+  }
+
+  Color _priorityColor(TaskPriority priority) {
+    switch (priority) {
+      case TaskPriority.low:
+        return Colors.green;
+      case TaskPriority.medium:
+        return const Color(0xFF0EA5E9);
+      case TaskPriority.high:
+        return Colors.orange;
+      case TaskPriority.urgent:
+        return Colors.red;
     }
+  }
+}
+
+class _AttachmentAction extends StatelessWidget {
+  const _AttachmentAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: onTap,
+      icon: Icon(icon),
+      label: Text(label),
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+    );
+  }
+}
+
+class _AttachmentPreview extends StatelessWidget {
+  const _AttachmentPreview({required this.value, required this.onRemove});
+
+  final String value;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final isLink = AttachmentPicker.isLink(value);
+    final isImage = !isLink && AttachmentPicker.isImage(value);
+
+    return Stack(
+      children: [
+        Container(
+          width: double.infinity,
+          padding: isImage ? EdgeInsets.zero : const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: isImage
+              ? ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Image.file(
+                    File(value),
+                    height: 150,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  ),
+                )
+              : Row(
+                  children: [
+                    Icon(isLink ? Icons.link_rounded : Icons.insert_drive_file),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        AttachmentPicker.fileName(value),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+        ),
+        Positioned(
+          top: 8,
+          right: 8,
+          child: GestureDetector(
+            onTap: onRemove,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: const BoxDecoration(
+                color: Colors.black54,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.close, color: Colors.white, size: 20),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 

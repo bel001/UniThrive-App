@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -23,18 +24,22 @@ Future<void> showProjectCreationSheet({
   await showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: Theme.of(context).cardColor,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-    ),
+    backgroundColor: Colors.transparent,
     builder: (modalContext) {
-      return Padding(
-        padding: EdgeInsets.only(
-          left: 24,
-          right: 24,
-          top: 24,
-          bottom: MediaQuery.of(modalContext).viewInsets.bottom + 24,
-        ),
+      return ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor.withValues(alpha: 0.85),
+            ),
+            padding: EdgeInsets.only(
+              left: 24,
+              right: 24,
+              top: 24,
+              bottom: MediaQuery.of(modalContext).viewInsets.bottom + 24,
+            ),
         child: StatefulBuilder(
           builder: (context, setSheetState) {
             return SingleChildScrollView(
@@ -42,13 +47,17 @@ Future<void> showProjectCreationSheet({
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Nuevo Proyecto Inteligente',
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w700,
+                      const Expanded(
+                        child: Text(
+                          'Nuevo Proyecto Inteligente',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
                       IconButton(
@@ -57,6 +66,10 @@ Future<void> showProjectCreationSheet({
                           color: Colors.grey,
                         ),
                         onPressed: () => _showAIInfo(context),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () => Navigator.of(context).pop(),
                       ),
                     ],
                   ),
@@ -93,13 +106,17 @@ Future<void> showProjectCreationSheet({
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            dueDate == null
-                                ? 'Selecciona una fecha'
-                                : DateFormat.yMMMMd('es').format(dueDate!),
+                          Expanded(
+                            child: Text(
+                              dueDate == null
+                                  ? 'Selecciona una fecha'
+                                  : DateFormat.yMMMMd('es').format(dueDate!),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
+                          const SizedBox(width: 12),
                           const Icon(
                             Icons.calendar_month_outlined,
                             color: Color(0xFF9FCFBB),
@@ -174,18 +191,16 @@ Future<void> showProjectCreationSheet({
                     style: TextStyle(fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 12),
-                  Row(
-                    children: List.generate(sizes.length, (index) {
-                      final active = selectedSize == index;
-                      return Expanded(
-                        child: GestureDetector(
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final compact = constraints.maxWidth < 320;
+                      final cards = List.generate(sizes.length, (index) {
+                        final active = selectedSize == index;
+                        final card = GestureDetector(
                           onTap: () =>
                               setSheetState(() => selectedSize = index),
                           child: Container(
                             height: 90,
-                            margin: EdgeInsets.only(
-                              right: index == sizes.length - 1 ? 0 : 12,
-                            ),
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
@@ -207,6 +222,8 @@ Future<void> showProjectCreationSheet({
                                 const SizedBox(height: 6),
                                 Text(
                                   sizes[index],
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     color: sizeColors[index],
                                     fontWeight: FontWeight.w600,
@@ -215,9 +232,36 @@ Future<void> showProjectCreationSheet({
                               ],
                             ),
                           ),
-                        ),
-                      );
-                    }),
+                        );
+
+                        if (compact) {
+                          return Padding(
+                            padding: EdgeInsets.only(
+                              bottom: index == sizes.length - 1 ? 0 : 12,
+                            ),
+                            child: SizedBox(
+                              width: double.infinity,
+                              child: card,
+                            ),
+                          );
+                        }
+
+                        return Expanded(
+                          child: Padding(
+                            padding: EdgeInsets.only(
+                              right: index == sizes.length - 1 ? 0 : 12,
+                            ),
+                            child: card,
+                          ),
+                        );
+                      });
+
+                      if (compact) {
+                        return Column(children: cards);
+                      }
+
+                      return Row(children: cards);
+                    },
                   ),
                   const SizedBox(height: 24),
                   UniPrimaryButton(
@@ -258,7 +302,7 @@ Future<void> showProjectCreationSheet({
             );
           },
         ),
-      );
+      )));
     },
   );
 }

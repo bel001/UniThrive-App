@@ -10,6 +10,7 @@ import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
 import '../models/schedule.dart';
+import '../models/task.dart';
 
 class NotificationService {
   NotificationService._();
@@ -127,10 +128,13 @@ class NotificationService {
     final reminderTime = block.start.subtract(_leadDuration);
     if (reminderTime.isBefore(DateTime.now())) return;
     await cancelReminder('schedule_${block.id}');
+    final startTime =
+        '${block.start.hour.toString().padLeft(2, '0')}:${block.start.minute.toString().padLeft(2, '0')}';
     await _scheduleReminder(
       key: 'schedule_${block.id}',
       title: 'Próxima clase',
-      body: '${block.title} inicia pronto',
+      body:
+          '${block.title} inicia a las $startTime${block.location.isEmpty ? '' : ' · ${block.location}'}',
       scheduledDate: reminderTime,
     );
   }
@@ -145,14 +149,27 @@ class NotificationService {
     required String title,
     required DateTime dueDate,
     int? customMinutes, // null = use global default
+    String? contextLabel,
+    TaskPriority priority = TaskPriority.medium,
   }) async {
     final minutesToUse = customMinutes ?? _defaultLeadMinutes;
     final reminderTime = dueDate.subtract(Duration(minutes: minutesToUse));
     if (reminderTime.isBefore(DateTime.now())) return;
+    final urgency = switch (priority) {
+      TaskPriority.urgent => 'Urgente',
+      TaskPriority.high => 'Alta prioridad',
+      TaskPriority.medium => 'Pendiente',
+      TaskPriority.low => 'Pendiente',
+    };
+    final dueTime =
+        '${dueDate.hour.toString().padLeft(2, '0')}:${dueDate.minute.toString().padLeft(2, '0')}';
+    final context = contextLabel == null || contextLabel.trim().isEmpty
+        ? ''
+        : ' · ${contextLabel.trim()}';
     await _scheduleReminder(
       key: 'task_regular_$taskId',
-      title: 'Tarea pendiente',
-      body: '"$title" comienza en $minutesToUse minutos',
+      title: '$urgency$context',
+      body: '"$title" vence a las $dueTime · en $minutesToUse min',
       scheduledDate: reminderTime,
     );
   }

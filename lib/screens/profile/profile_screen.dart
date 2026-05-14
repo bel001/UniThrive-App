@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../../core/design_tokens.dart';
 import '../../services/notification_service.dart';
 import '../../state/app_state.dart';
 import '../../widgets/soft_page_route.dart';
 import '../../widgets/uni_card.dart';
 import '../notifications/notification_center_screen.dart';
 import '../tasks/task_history_screen.dart';
+import '../settings/settings_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -15,131 +17,126 @@ class ProfileScreen extends StatelessWidget {
     final appState = AppStateProvider.of(context);
     final theme = Theme.of(context);
     final isDarkMode = appState.themeMode == ThemeMode.dark;
+    final activeProfile = appState.activeProfileSummary;
 
     return Scaffold(
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          padding: const EdgeInsets.fromLTRB(
+            DesignTokens.screenHorizontal,
+            12,
+            DesignTokens.screenHorizontal,
+            132,
+          ),
           children: [
-            Text('Ajustes', style: theme.textTheme.displayLarge),
-            const SizedBox(height: 20),
-            UniCard(
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 28,
-                    backgroundColor: const Color(0xFFDAD7FE),
-                    child: Text(
-                      _initials(appState.userName),
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF9FCFBB),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          appState.userName,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          appState.userEmail,
-                          style: theme.textTheme.bodyMedium,
-                        ),
-                      ],
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () => _openAccountManager(context, appState),
-                    child: const Text('Gestionar cuenta'),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 28),
+            Text('Perfil', style: theme.textTheme.displayLarge),
+            const SizedBox(height: 6),
             Text(
-              'Ajustes de la aplicación',
-              style: theme.textTheme.titleMedium,
+              'Tu cuenta, recordatorios y preferencias en un solo lugar.',
+              style: theme.textTheme.bodyMedium,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 20),
+            _ProfileHeroCard(appState: appState),
+            const SizedBox(height: 28),
+            const _ProfileSectionHeader(
+              title: 'Preferencias',
+              subtitle: 'Apariencia, alertas y pequeños ajustes cotidianos.',
+            ),
+            const SizedBox(height: 10),
             UniCard(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
               child: Column(
                 children: [
                   _SettingSwitchTile(
-                    icon: Icons.nightlight_round,
+                    icon: Icons.dark_mode_outlined,
                     title: 'Apariencia',
-                    subtitle: isDarkMode ? 'Modo oscuro' : 'Modo claro',
+                    subtitle: isDarkMode
+                        ? 'Modo oscuro activo'
+                        : 'Modo claro activo',
                     value: isDarkMode,
                     onChanged: (value) => appState.setThemeMode(
                       value ? ThemeMode.dark : ThemeMode.light,
                     ),
                   ),
-                  const Divider(height: 8),
+                  const Divider(),
                   _SettingTile(
-                    icon: Icons.notifications_none,
+                    icon: Icons.notifications_none_rounded,
                     title: 'Notificaciones y alertas',
-                    subtitle: 'Recordatorios y mensajes',
+                    subtitle: 'Permisos y automatización',
                     onTap: () => _openNotificationSettings(context, appState),
                   ),
-                  const Divider(height: 8),
+                  const Divider(),
                   _SettingTile(
                     icon: Icons.notifications_active_outlined,
                     title: 'Centro de recordatorios',
-                    subtitle: 'Consulta avisos y permisos',
+                    subtitle: 'Consulta próximos avisos',
                     onTap: () => Navigator.of(context).push(
                       SoftPageRoute(
                         builder: (_) => const NotificationCenterScreen(),
                       ),
                     ),
                   ),
-                  const Divider(height: 8),
+                  const Divider(),
                   _SettingTile(
-                    icon: Icons.history,
+                    icon: Icons.history_rounded,
                     title: 'Historial de tiempo',
-                    subtitle: 'Ver tiempo dedicado a tareas',
+                    subtitle: 'Sesiones y foco acumulado',
                     onTap: () => Navigator.of(context).push(
                       SoftPageRoute(builder: (_) => const TaskHistoryScreen()),
                     ),
                   ),
-                  const Divider(height: 8),
+                  const Divider(),
                   _SettingTile(
                     icon: Icons.music_note_outlined,
                     title: 'Sonidos de alarma',
                     subtitle: 'Actual: ${appState.alarmSound}',
                     onTap: () => _openSoundPicker(context, appState),
                   ),
-                  const Divider(height: 8),
+                  const Divider(),
                   _SettingSwitchTile(
-                    icon: Icons.emoji_emotions_outlined,
+                    icon: Icons.favorite_border_rounded,
                     title: 'Mensajes de ánimo',
-                    subtitle: 'Recibe recordatorios motivacionales',
+                    subtitle: 'Pequeños recordatorios para sostener el ritmo',
                     value: appState.motivationalMessages,
                     onChanged: (_) => appState.toggleMotivationMessages(),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 28),
-            Text('Soporte', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 12),
+            const SizedBox(height: 24),
+            _ProfileSectionHeader(
+              title: 'Cuenta y soporte',
+              subtitle: activeProfile == null
+                  ? 'Perfiles, privacidad y ayuda esencial.'
+                  : 'Activo ahora: ${activeProfile.name}',
+            ),
+            const SizedBox(height: 10),
             UniCard(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
               child: Column(
                 children: [
+                  _SettingTile(
+                    icon: Icons.person_outline_rounded,
+                    title: 'Gestionar perfiles',
+                    subtitle: 'Cambiar o crear perfiles de estudio',
+                    onTap: () => _openAccountManager(context, appState),
+                  ),
+                  const Divider(),
+                  _SettingTile(
+                    icon: Icons.settings_outlined,
+                    title: 'Ajustes avanzados',
+                    subtitle: 'IA de voz, copias de seguridad y datos',
+                    onTap: () => Navigator.of(context).push(
+                      SoftPageRoute(builder: (_) => const SettingsScreen()),
+                    ),
+                  ),
+                  const Divider(),
                   _SettingTile(
                     icon: Icons.info_outline,
                     title: 'Acerca de UniThrive',
                     onTap: () => _showAbout(context),
                   ),
-                  const Divider(height: 8),
+                  const Divider(),
                   _SettingTile(
                     icon: Icons.privacy_tip_outlined,
                     title: 'Política de privacidad',
@@ -148,18 +145,209 @@ class ProfileScreen extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 28),
             OutlinedButton(
               style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFFEF476F),
-                side: const BorderSide(color: Color(0xFFEF476F)),
+                foregroundColor: theme.colorScheme.error,
+                side: BorderSide(
+                  color: theme.colorScheme.error.withValues(alpha: 0.5),
+                ),
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(28),
+                  borderRadius: BorderRadius.circular(20),
                 ),
               ),
               onPressed: () => _confirmSignOut(context, appState),
               child: const Text('Cerrar sesión'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ProfileHeroCard extends StatelessWidget {
+  final AppState appState;
+
+  const _ProfileHeroCard({required this.appState});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final activeProfile = appState.activeProfileSummary;
+
+    return UniCard(
+      radius: 32,
+      color: scheme.primaryContainer.withValues(alpha: 0.72),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _ProfilePill(
+            icon: Icons.person_rounded,
+            label: activeProfile == null
+                ? 'Perfil principal'
+                : 'Perfil activo: ${activeProfile.name}',
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: scheme.surface.withValues(alpha: 0.72),
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Text(
+                    _initials(appState.userName),
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      color: scheme.primary,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(appState.userName, style: theme.textTheme.titleLarge),
+                    const SizedBox(height: 4),
+                    Text(
+                      appState.userEmail.isEmpty
+                          ? 'Sin correo configurado'
+                          : appState.userEmail,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: scheme.onPrimaryContainer.withValues(
+                          alpha: 0.78,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Text(
+            'Tu espacio ya está configurado para estudiar con menos fricción y más claridad.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: scheme.onPrimaryContainer.withValues(alpha: 0.78),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _HeroInfoChip(
+                label: 'Tema',
+                value: appState.themeMode == ThemeMode.dark
+                    ? 'Oscuro'
+                    : 'Claro',
+              ),
+              _HeroInfoChip(
+                label: 'Racha',
+                value: '${appState.streakDays} días',
+              ),
+              _HeroInfoChip(label: 'Nivel', value: '${appState.level}'),
+              _HeroInfoChip(
+                label: 'Perfiles',
+                value: '${appState.profiles.length}',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileSectionHeader extends StatelessWidget {
+  const _ProfileSectionHeader({required this.title, required this.subtitle});
+
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: theme.textTheme.titleMedium),
+        const SizedBox(height: 4),
+        Text(subtitle, style: theme.textTheme.bodySmall),
+      ],
+    );
+  }
+}
+
+class _HeroInfoChip extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _HeroInfoChip({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface.withValues(alpha: 0.68),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: theme.textTheme.labelMedium),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.titleSmall,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfilePill extends StatelessWidget {
+  const _ProfilePill({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface.withValues(alpha: 0.68),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 250),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: theme.colorScheme.primary),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelMedium,
+              ),
             ),
           ],
         ),
@@ -190,20 +378,18 @@ class _SettingTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return ListTile(
-      contentPadding: EdgeInsets.zero,
+      contentPadding: const EdgeInsets.symmetric(vertical: 6),
       onTap: onTap,
-      leading: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: const Color(0xFFF3F4F6),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Icon(icon, color: theme.colorScheme.primary),
+      leading: _TileIcon(icon: icon),
+      title: Text(
+        title,
+        style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
       ),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
       subtitle: subtitle != null ? Text(subtitle!) : null,
-      trailing: const Icon(Icons.chevron_right_rounded),
+      trailing: Icon(
+        Icons.chevron_right_rounded,
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
     );
   }
 }
@@ -225,115 +411,117 @@ void _openNotificationSettings(BuildContext context, AppState appState) {
         ),
         child: StatefulBuilder(
           builder: (context, setSheetState) {
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 48,
-                  height: 5,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade400,
-                    borderRadius: BorderRadius.circular(12),
+            return _AdaptiveSheetBody(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const _ProfileSheetHeader(
+                    'Notificaciones y alertas',
+                    'Activa o desactiva los recordatorios inteligentes. Puedes volver a solicitar permisos desde el sistema cuando lo necesites.',
                   ),
-                ),
-                const Text(
-                  'Notificaciones y alertas',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Activa o desactiva los recordatorios inteligentes. Puedes volver a solicitar permisos desde los ajustes del sistema.',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 12),
-                SwitchListTile.adaptive(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Recordatorios de clases'),
-                  subtitle: const Text(
-                    'Avisos antes de tus clases y reuniones',
+                  UniCard(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 8,
+                    ),
+                    radius: 28,
+                    child: Column(
+                      children: [
+                        SwitchListTile.adaptive(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Recordatorios de clases'),
+                          subtitle: const Text(
+                            'Avisos antes de tus clases y reuniones',
+                          ),
+                          value: appState.classRemindersEnabled,
+                          onChanged: (value) async {
+                            if (value) {
+                              final granted =
+                                  await NotificationService.ensurePermissions();
+                              if (!granted) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Activa los permisos de notificaciones en el sistema.',
+                                      ),
+                                    ),
+                                  );
+                                }
+                                return;
+                              }
+                            }
+                            appState.setClassReminders(value);
+                            setSheetState(() {});
+                          },
+                        ),
+                        const Divider(),
+                        SwitchListTile.adaptive(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Recordatorios de tareas'),
+                          subtitle: const Text(
+                            'Alertas antes de cada tarea programada',
+                          ),
+                          value: appState.taskRemindersEnabled,
+                          onChanged: (value) async {
+                            if (value) {
+                              final granted =
+                                  await NotificationService.ensurePermissions();
+                              if (!granted) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Activa los permisos de notificaciones en el sistema.',
+                                      ),
+                                    ),
+                                  );
+                                }
+                                return;
+                              }
+                            }
+                            appState.setTaskReminders(value);
+                            setSheetState(() {});
+                          },
+                        ),
+                        const Divider(),
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Anticipación de recordatorios'),
+                          subtitle: Text(
+                            'Te avisamos ${appState.reminderLeadMinutes} min antes',
+                          ),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () =>
+                              _showReminderLeadPicker(context, appState),
+                        ),
+                        const Divider(),
+                        SwitchListTile.adaptive(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Mensajes de ánimo'),
+                          subtitle: const Text(
+                            'Pequeños empujones para mantener la motivación',
+                          ),
+                          value: appState.motivationalMessages,
+                          onChanged: (_) {
+                            appState.toggleMotivationMessages();
+                            setSheetState(() {});
+                          },
+                        ),
+                      ],
+                    ),
                   ),
-                  value: appState.classRemindersEnabled,
-                  onChanged: (value) async {
-                    if (value) {
-                      final granted =
-                          await NotificationService.ensurePermissions();
-                      if (!granted) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Activa los permisos de notificaciones en el sistema.',
-                              ),
-                            ),
-                          );
-                        }
-                        return;
-                      }
-                    }
-                    appState.setClassReminders(value);
-                    setSheetState(() {});
-                  },
-                ),
-                SwitchListTile.adaptive(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Recordatorios de tareas'),
-                  subtitle: const Text(
-                    'Alertas antes de cada tarea programada',
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Cerrar'),
+                    ),
                   ),
-                  value: appState.taskRemindersEnabled,
-                  onChanged: (value) async {
-                    if (value) {
-                      final granted =
-                          await NotificationService.ensurePermissions();
-                      if (!granted) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Activa los permisos de notificaciones en el sistema.',
-                              ),
-                            ),
-                          );
-                        }
-                        return;
-                      }
-                    }
-                    appState.setTaskReminders(value);
-                    setSheetState(() {});
-                  },
-                ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Anticipación de recordatorios'),
-                  subtitle: Text(
-                    'Te avisamos ${appState.reminderLeadMinutes} min antes',
-                  ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => _showReminderLeadPicker(context, appState),
-                ),
-                SwitchListTile.adaptive(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Mensajes de ánimo'),
-                  subtitle: const Text(
-                    'Pequeños empujones para mantener la motivación',
-                  ),
-                  value: appState.motivationalMessages,
-                  onChanged: (_) {
-                    appState.toggleMotivationMessages();
-                    setSheetState(() {});
-                  },
-                ),
-                const SizedBox(height: 12),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Cerrar'),
-                  ),
-                ),
-              ],
+                ],
+              ),
             );
           },
         ),
@@ -361,68 +549,90 @@ void _openAccountManager(BuildContext context, AppState appState) {
           builder: (context, setSheetState) {
             final profiles = appState.profiles;
             final activeId = appState.activeProfileSummary?.id;
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 48,
-                  height: 5,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade400,
-                    borderRadius: BorderRadius.circular(12),
+            return _AdaptiveSheetBody(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _ProfileSheetHeader(
+                    'Perfiles de estudio',
+                    'Cambia de entorno o crea un perfil separado para otra etapa de estudio.',
                   ),
-                ),
-                const Text(
-                  'Perfiles de estudio',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 12),
-                ...profiles.map(
-                  (profile) => ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(
-                      profile.id == activeId
-                          ? Icons.radio_button_checked
-                          : Icons.radio_button_off,
-                      color: Theme.of(context).colorScheme.primary,
+                  UniCard(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 8,
                     ),
-                    title: Text(
-                      profile.name,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    subtitle: Text(profile.email),
-                    trailing: profile.id == activeId || profiles.length == 1
-                        ? null
-                        : IconButton(
-                            icon: const Icon(
-                              Icons.delete_outline,
-                              color: Colors.redAccent,
+                    radius: 28,
+                    child: Column(
+                      children: profiles
+                          .map(
+                            (profile) => Column(
+                              children: [
+                                ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  leading: Icon(
+                                    profile.id == activeId
+                                        ? Icons.radio_button_checked
+                                        : Icons.radio_button_off,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                  ),
+                                  title: Text(
+                                    profile.name,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  subtitle: profile.email.isEmpty
+                                      ? null
+                                      : Text(
+                                          profile.email,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                  trailing:
+                                      profile.id == activeId ||
+                                          profiles.length == 1
+                                      ? null
+                                      : IconButton(
+                                          icon: const Icon(
+                                            Icons.delete_outline,
+                                            color: Colors.redAccent,
+                                          ),
+                                          onPressed: () {
+                                            appState.deleteUserProfile(
+                                              profile.id,
+                                            );
+                                            setSheetState(() {});
+                                          },
+                                        ),
+                                  onTap: () {
+                                    appState.switchUserProfile(profile.id);
+                                    setSheetState(() {});
+                                  },
+                                ),
+                                if (profile != profiles.last) const Divider(),
+                              ],
                             ),
-                            onPressed: () {
-                              appState.deleteUserProfile(profile.id);
-                              setSheetState(() {});
-                            },
-                          ),
-                    onTap: () {
-                      appState.switchUserProfile(profile.id);
-                      setSheetState(() {});
-                    },
+                          )
+                          .toList(),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                FilledButton.icon(
-                  onPressed: () async {
-                    final name = await _promptProfileName(context);
-                    if (name != null && name.trim().isNotEmpty) {
-                      appState.addUserProfile(name.trim());
-                      setSheetState(() {});
-                    }
-                  },
-                  icon: const Icon(Icons.person_add_alt_1),
-                  label: const Text('Agregar perfil'),
-                ),
-              ],
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    onPressed: () async {
+                      final name = await _promptProfileName(context);
+                      if (name != null && name.trim().isNotEmpty) {
+                        appState.addUserProfile(name.trim());
+                        setSheetState(() {});
+                      }
+                    },
+                    icon: const Icon(Icons.person_add_alt_1),
+                    label: const Text('Agregar perfil'),
+                  ),
+                ],
+              ),
             );
           },
         ),
@@ -437,6 +647,7 @@ Future<String?> _promptProfileName(BuildContext context) async {
     context: context,
     builder: (dialogContext) {
       return AlertDialog(
+        scrollable: true,
         title: const Text('Nombre del nuevo perfil'),
         content: TextField(
           controller: controller,
@@ -470,26 +681,63 @@ void _openSoundPicker(BuildContext context, AppState appState) {
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
     builder: (sheetContext) {
+      final maxHeight = MediaQuery.of(sheetContext).size.height * 0.7;
       return SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: options
-              .map(
-                (sound) => ListTile(
-                  title: Text(sound),
-                  trailing: sound == appState.alarmSound
-                      ? const Icon(Icons.check, color: Color(0xFF7C4DFF))
-                      : null,
-                  onTap: () {
-                    appState.setAlarmSound(sound);
-                    Navigator.of(sheetContext).pop();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Sonido seleccionado: $sound')),
-                    );
-                  },
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxHeight),
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                const _ProfileSheetHeader(
+                  'Sonidos de alarma',
+                  'Elige un tono simple y reconocible para tus sesiones.',
                 ),
-              )
-              .toList(),
+                UniCard(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 8,
+                  ),
+                  radius: 28,
+                  child: Column(
+                    children: options
+                        .map(
+                          (sound) => Column(
+                            children: [
+                              ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: Text(sound),
+                                trailing: sound == appState.alarmSound
+                                    ? Icon(
+                                        Icons.check,
+                                        color: Theme.of(
+                                          sheetContext,
+                                        ).colorScheme.primary,
+                                      )
+                                    : null,
+                                onTap: () {
+                                  appState.setAlarmSound(sound);
+                                  Navigator.of(sheetContext).pop();
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'Sonido seleccionado: $sound',
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                              if (sound != options.last) const Divider(),
+                            ],
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       );
     },
@@ -504,30 +752,64 @@ void _showReminderLeadPicker(BuildContext context, AppState appState) {
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
     builder: (sheetContext) {
+      final maxHeight = MediaQuery.of(sheetContext).size.height * 0.7;
       return SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: options
-              .map(
-                (minutes) => ListTile(
-                  title: Text('Recordar $minutes min antes'),
-                  trailing: minutes == appState.reminderLeadMinutes
-                      ? const Icon(Icons.check, color: Color(0xFF7C4DFF))
-                      : null,
-                  onTap: () {
-                    appState.setReminderLeadMinutes(minutes);
-                    Navigator.of(sheetContext).pop();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'Usaremos recordatorios $minutes min antes.',
-                        ),
-                      ),
-                    );
-                  },
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxHeight),
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                const _ProfileSheetHeader(
+                  'Anticipación de recordatorios',
+                  'Define cuánto margen necesitas antes de una tarea o clase.',
                 ),
-              )
-              .toList(),
+                UniCard(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 8,
+                  ),
+                  radius: 28,
+                  child: Column(
+                    children: options
+                        .map(
+                          (minutes) => Column(
+                            children: [
+                              ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: Text('Recordar $minutes min antes'),
+                                trailing:
+                                    minutes == appState.reminderLeadMinutes
+                                    ? Icon(
+                                        Icons.check,
+                                        color: Theme.of(
+                                          sheetContext,
+                                        ).colorScheme.primary,
+                                      )
+                                    : null,
+                                onTap: () {
+                                  appState.setReminderLeadMinutes(minutes);
+                                  Navigator.of(sheetContext).pop();
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'Usaremos recordatorios $minutes min antes.',
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                              if (minutes != options.last) const Divider(),
+                            ],
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       );
     },
@@ -553,6 +835,7 @@ void _showPrivacy(BuildContext context) {
     context: context,
     builder: (dialogContext) {
       return AlertDialog(
+        scrollable: true,
         title: const Text('Política de privacidad'),
         content: const Text(
           'Tus datos se guardan localmente en el dispositivo. No compartimos ni sincronizamos la información con servidores externos. '
@@ -574,6 +857,7 @@ void _confirmSignOut(BuildContext context, AppState appState) {
     context: context,
     builder: (dialogContext) {
       return AlertDialog(
+        scrollable: true,
         title: const Text('Cerrar sesión'),
         content: const Text(
           'Volverás a la pantalla de bienvenida. Tus datos permanecerán guardados en el dispositivo.',
@@ -612,21 +896,86 @@ class _SettingSwitchTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: const Color(0xFFF3F4F6),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Icon(icon, color: theme.colorScheme.primary),
+      contentPadding: const EdgeInsets.symmetric(vertical: 6),
+      leading: _TileIcon(icon: icon),
+      title: Text(
+        title,
+        style: Theme.of(
+          context,
+        ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
       ),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
       subtitle: subtitle != null ? Text(subtitle!) : null,
-      trailing: Switch(value: value, onChanged: onChanged),
+      trailing: Switch.adaptive(value: value, onChanged: onChanged),
+    );
+  }
+}
+
+class _TileIcon extends StatelessWidget {
+  final IconData icon;
+
+  const _TileIcon({required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primaryContainer,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Icon(icon, color: theme.colorScheme.primary, size: 20),
+    );
+  }
+}
+
+class _ProfileSheetHeader extends StatelessWidget {
+  const _ProfileSheetHeader(this.title, this.subtitle);
+
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 48,
+          height: 5,
+          margin: const EdgeInsets.only(bottom: 16),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.outlineVariant,
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        Text(title, style: theme.textTheme.titleLarge),
+        const SizedBox(height: 8),
+        Text(subtitle, style: theme.textTheme.bodyMedium),
+        const SizedBox(height: 14),
+      ],
+    );
+  }
+}
+
+class _AdaptiveSheetBody extends StatelessWidget {
+  final Widget child;
+
+  const _AdaptiveSheetBody({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final maxHeight = MediaQuery.of(context).size.height * 0.82;
+    return SafeArea(
+      top: false,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        child: SingleChildScrollView(child: child),
+      ),
     );
   }
 }

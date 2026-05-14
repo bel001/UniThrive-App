@@ -21,34 +21,38 @@ class DataState extends ChangeNotifier {
   List<SupportMessage> get supportMessages =>
       List.unmodifiable(_supportMessages);
   FocusSession? get currentFocusSession => _currentFocusSession;
+  String? get quickProjectId => _quickProjectId;
 
   void loadFromMap(Map<String, dynamic> map) {
+    _projects.clear();
+    _tasks.clear();
+    _scheduleBlocks.clear();
+    _focusHistory.clear();
+    _supportMessages.clear();
+    _currentFocusSession = null;
+    _quickProjectId = null;
+
     if (map['projects'] != null) {
-      _projects.clear();
       for (var p in map['projects']) {
         _projects.add(Project.fromJson(p));
       }
     }
     if (map['tasks'] != null) {
-      _tasks.clear();
       for (var t in map['tasks']) {
         _tasks.add(Task.fromJson(t));
       }
     }
     if (map['schedule'] != null) {
-      _scheduleBlocks.clear();
       for (var s in map['schedule']) {
         _scheduleBlocks.add(ScheduleBlock.fromJson(s));
       }
     }
     if (map['focusHistory'] != null) {
-      _focusHistory.clear();
       for (var f in map['focusHistory']) {
         _focusHistory.add(FocusSession.fromJson(f));
       }
     }
     if (map['supportMessages'] != null) {
-      _supportMessages.clear();
       for (var m in map['supportMessages']) {
         _supportMessages.add(SupportMessage.fromJson(m));
       }
@@ -82,6 +86,9 @@ class DataState extends ChangeNotifier {
 
   void deleteProject(String projectId) {
     _projects.removeWhere((p) => p.id == projectId);
+    if (_quickProjectId == projectId) {
+      _quickProjectId = null;
+    }
     notifyListeners();
   }
 
@@ -111,6 +118,39 @@ class DataState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void reorderTasksWithinProject({
+    required String projectId,
+    required String taskId,
+    required int newIndex,
+  }) {
+    final projectTaskIndexes = <int>[];
+    final projectTasks = <Task>[];
+
+    for (var i = 0; i < _tasks.length; i++) {
+      final task = _tasks[i];
+      if (task.projectId == projectId) {
+        projectTaskIndexes.add(i);
+        projectTasks.add(task);
+      }
+    }
+
+    if (projectTasks.length < 2) return;
+
+    final currentIndex = projectTasks.indexWhere((task) => task.id == taskId);
+    if (currentIndex == -1) return;
+
+    final boundedNewIndex = newIndex.clamp(0, projectTasks.length - 1);
+    if (boundedNewIndex == currentIndex) return;
+
+    final movedTask = projectTasks.removeAt(currentIndex);
+    projectTasks.insert(boundedNewIndex, movedTask);
+
+    for (var i = 0; i < projectTaskIndexes.length; i++) {
+      _tasks[projectTaskIndexes[i]] = projectTasks[i];
+    }
+    notifyListeners();
+  }
+
   void addScheduleBlock(ScheduleBlock block) {
     _scheduleBlocks.add(block);
     notifyListeners();
@@ -134,6 +174,8 @@ class DataState extends ChangeNotifier {
     _tasks.clear();
     _scheduleBlocks.clear();
     _focusHistory.clear();
+    _supportMessages.clear();
+    _quickProjectId = null;
     _currentFocusSession = null;
     notifyListeners();
   }
@@ -148,7 +190,14 @@ class DataState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ... (Other CRUD methods from AppState)
+  void addSupportMessage(SupportMessage message) {
+    _supportMessages.add(message);
+    notifyListeners();
+  }
 
-  // Helper to generate IDs if needed, or pass from outside
+  void setQuickProjectId(String? projectId) {
+    if (_quickProjectId == projectId) return;
+    _quickProjectId = projectId;
+    notifyListeners();
+  }
 }

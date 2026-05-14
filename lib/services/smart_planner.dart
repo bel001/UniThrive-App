@@ -64,20 +64,19 @@ class SmartPlanner {
     required List<ScheduleBlock> existingBlocks,
     required DateTime startDate,
     int daysToPlan = 7,
+    String Function()? idFactory,
   }) {
-    List<ScheduleBlock> newBlocks = [];
-    List<Task> pendingTasks = List.from(tasks);
-
-    // Sort tasks by priority/deadline? For now, just take them in order.
+    final newBlocks = <ScheduleBlock>[];
+    final pendingTasks = _prioritizedTasks(tasks);
 
     for (int i = 0; i < daysToPlan; i++) {
       if (pendingTasks.isEmpty) break;
 
       final currentDate = startDate.add(Duration(days: i));
-
-      // Skip weekends? Maybe make it optional. For now, include them.
-
-      final freeSlots = findFreeSlots(currentDate, existingBlocks);
+      final freeSlots = findFreeSlots(currentDate, [
+        ...existingBlocks,
+        ...newBlocks,
+      ]);
 
       for (final slot in freeSlots) {
         if (pendingTasks.isEmpty) break;
@@ -93,35 +92,26 @@ class SmartPlanner {
           const int blockMinutes = 60;
 
           if (slotDuration.inMinutes >= blockMinutes) {
-            // Create a block
             final blockEnd = slotStart.add(
               const Duration(minutes: blockMinutes),
             );
 
             newBlocks.add(
               ScheduleBlock(
-                id:
-                    DateTime.now().millisecondsSinceEpoch.toString() +
-                    i.toString(), // Simple ID gen
+                id: idFactory?.call() ?? _fallbackId(task.id, slotStart),
                 title: 'Estudiar: ${task.title}',
                 start: slotStart,
                 end: blockEnd,
                 category: ScheduleCategory.task,
                 linkedTaskId: task.id,
-                color: const Color(0xFF9FCFBB), // Example color
+                color: const Color(0xFF9FCFBB),
               ),
             );
 
-            // Remove task from pending (or mark as scheduled?)
-            // If task takes longer, maybe we only schedule a part of it?
-            // For this MVP, assume 1 block = 1 task done or progress.
             pendingTasks.removeAt(0);
-
-            // Update slot
             slotStart = blockEnd;
             slotDuration -= const Duration(minutes: blockMinutes);
           } else {
-            // Slot too small for a full block, move to next slot
             break;
           }
         }
@@ -131,16 +121,26 @@ class SmartPlanner {
     return newBlocks;
   }
 
+  static List<Task> _prioritizedTasks(List<Task> tasks) {
+    final sorted = tasks.where((task) => !task.completed).toList();
+    sorted.sort((a, b) {
+      final priorityDiff = b.priority.index.compareTo(a.priority.index);
+      if (priorityDiff != 0) return priorityDiff;
+      final aDate = a.dueDate ?? DateTime(2100);
+      final bDate = b.dueDate ?? DateTime(2100);
+      final dateDiff = aDate.compareTo(bDate);
+      if (dateDiff != 0) return dateDiff;
+      return a.title.compareTo(b.title);
+    });
+    return sorted;
+  }
+
+  static String _fallbackId(String taskId, DateTime slotStart) {
+    return 'plan-$taskId-${slotStart.millisecondsSinceEpoch}';
+  }
+
   /// Generates a list of template tasks based on project type and size.
-  static List<String> generateTasksForProject(
-    // We'll use String for size for now, matching the UI ('Pequeño', 'Mediano', 'Grande')
-    String size,
-    // We need ProjectType enum, but it's in project.dart.
-    // We can pass it as int or string if we don't want to import project.dart here,
-    // but better to import it.
-    // Assuming we import '../models/project.dart';
-    dynamic type,
-  ) {
+  static List<String> generateTasksForProject(String size, dynamic type) {
     // Basic templates
     final small = [
       'Investigación inicial',
@@ -176,9 +176,6 @@ class SmartPlanner {
     } else {
       baseTasks = large;
     }
-
-    // We could customize based on type (Essay, Presentation, etc.)
-    // For now, just return the base tasks with some prefix/suffix if needed.
     return baseTasks;
   }
 }

@@ -3,6 +3,23 @@ import 'pomodoro_session.dart';
 
 enum EnergyLevel { low, medium, high }
 
+enum TaskPriority { low, medium, high, urgent }
+
+extension TaskPriorityX on TaskPriority {
+  String get priorityLabel {
+    switch (this) {
+      case TaskPriority.low:
+        return 'Baja';
+      case TaskPriority.medium:
+        return 'Media';
+      case TaskPriority.high:
+        return 'Alta';
+      case TaskPriority.urgent:
+        return 'Urgente';
+    }
+  }
+}
+
 class Task {
   final String id;
   final String title;
@@ -11,8 +28,10 @@ class Task {
   final bool completed;
   final DateTime? completedAt;
   final EnergyLevel energy;
+  final TaskPriority priority;
   final String? description;
   final String? attachmentPath;
+  final List<String> labels;
   final List<Subtask> subtasks;
   final int? customReminderMinutes; // null = use global default
   final int timeSpentMinutes; // Total time spent on this task
@@ -26,8 +45,10 @@ class Task {
     this.completed = false,
     this.completedAt,
     this.energy = EnergyLevel.medium,
+    this.priority = TaskPriority.medium,
     this.description,
     this.attachmentPath,
+    this.labels = const [],
     this.subtasks = const [],
     this.customReminderMinutes,
     this.timeSpentMinutes = 0,
@@ -41,8 +62,10 @@ class Task {
     bool? completed,
     DateTime? completedAt,
     EnergyLevel? energy,
+    TaskPriority? priority,
     String? description,
     String? attachmentPath,
+    List<String>? labels,
     List<Subtask>? subtasks,
     int? customReminderMinutes,
     int? timeSpentMinutes,
@@ -56,8 +79,10 @@ class Task {
       completed: completed ?? this.completed,
       completedAt: completedAt ?? this.completedAt,
       energy: energy ?? this.energy,
+      priority: priority ?? this.priority,
       description: description ?? this.description,
       attachmentPath: attachmentPath ?? this.attachmentPath,
+      labels: labels ?? this.labels,
       subtasks: subtasks ?? this.subtasks,
       customReminderMinutes:
           customReminderMinutes ?? this.customReminderMinutes,
@@ -79,8 +104,16 @@ class Task {
           ? DateTime.parse(json['completedAt'] as String)
           : null,
       energy: _energyFromString(json['energy'] as String?),
+      priority: _priorityFromString(json['priority'] as String?),
       description: json['description'] as String?,
       attachmentPath: json['attachmentPath'] as String?,
+      labels:
+          (json['labels'] as List<dynamic>?)
+              ?.whereType<String>()
+              .map((label) => label.trim())
+              .where((label) => label.isNotEmpty)
+              .toList() ??
+          [],
       subtasks:
           (json['subtasks'] as List<dynamic>?)
               ?.map((s) => Subtask.fromJson(s as Map<String, dynamic>))
@@ -104,8 +137,10 @@ class Task {
     'completed': completed,
     'completedAt': completedAt?.toIso8601String(),
     'energy': energy.name,
+    'priority': priority.name,
     'description': description,
     'attachmentPath': attachmentPath,
+    'labels': labels,
     'subtasks': subtasks.map((s) => s.toJson()).toList(),
     'customReminderMinutes': customReminderMinutes,
     'timeSpentMinutes': timeSpentMinutes,
@@ -141,6 +176,22 @@ extension TaskHelpers on Task {
         return 'Energía alta';
     }
   }
+
+  String get priorityLabel {
+    return priority.priorityLabel;
+  }
+
+  bool get isOverdue {
+    if (completed || dueDate == null) return false;
+    return dueDate!.isBefore(DateTime.now());
+  }
+
+  bool get isDueSoon {
+    if (completed || dueDate == null) return false;
+    final now = DateTime.now();
+    final diff = dueDate!.difference(now);
+    return !diff.isNegative && diff <= const Duration(hours: 24);
+  }
 }
 
 EnergyLevel _energyFromString(String? value) {
@@ -151,5 +202,18 @@ EnergyLevel _energyFromString(String? value) {
       return EnergyLevel.high;
     default:
       return EnergyLevel.medium;
+  }
+}
+
+TaskPriority _priorityFromString(String? value) {
+  switch (value) {
+    case 'low':
+      return TaskPriority.low;
+    case 'high':
+      return TaskPriority.high;
+    case 'urgent':
+      return TaskPriority.urgent;
+    default:
+      return TaskPriority.medium;
   }
 }

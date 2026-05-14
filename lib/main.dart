@@ -5,11 +5,13 @@ import 'core/theme.dart';
 import 'state/app_state.dart';
 import 'screens/root/root_shell.dart';
 import 'screens/onboarding/welcome_screen.dart';
+import 'services/alarm_service.dart';
 import 'services/notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('es');
+  await AlarmService.initialize();
   await NotificationService.initialize();
   final appState = AppState();
   await appState.initialize();

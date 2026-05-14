@@ -32,10 +32,18 @@ class GamificationState extends ChangeNotifier {
       (xpProgressInCurrentLevel / xpForNextLevel * 100).clamp(0, 100);
 
   void loadFromMap(Map<String, dynamic> map) {
-    _experiencePoints = map['experiencePoints'] ?? 0;
-    _level = map['level'] ?? 1;
-    _streakDays = map['streakDays'] ?? 0;
-    _pomodoroStreakDays = map['pomodoroStreakDays'] ?? 0;
+    _experiencePoints = map['experiencePoints'] as int? ?? 0;
+    _level = map['level'] as int? ?? 1;
+    _streakDays = map['streakDays'] as int? ?? 0;
+    _pomodoroStreakDays = map['pomodoroStreakDays'] as int? ?? 0;
+    _lastActiveDay = null;
+    _lastPomodoroDay = null;
+    _achievements.clear();
+    _mascotState = MascotState(
+      mood: MascotMood.happy,
+      message: '',
+      timestamp: DateTime.now(),
+    );
 
     if (map['lastActiveDay'] != null) {
       _lastActiveDay = DateTime.parse(map['lastActiveDay']);

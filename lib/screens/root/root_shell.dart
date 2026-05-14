@@ -1,9 +1,12 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../home/dashboard_screen.dart';
+
 import '../calendar/calendar_screen.dart';
-import '../projects/projects_screen.dart';
+import '../home/dashboard_screen.dart';
 import '../profile/profile_screen.dart';
+import '../projects/projects_screen.dart';
 
 class RootShell extends StatefulWidget {
   const RootShell({super.key});
@@ -15,24 +18,23 @@ class RootShell extends StatefulWidget {
 class _RootShellState extends State<RootShell> {
   int _selectedIndex = 0;
 
-  List<Widget> get _screens => [
-    const DashboardScreen(key: ValueKey('screen-dashboard')),
-    const CalendarScreen(key: ValueKey('screen-calendar')),
-    const ProjectsScreen(key: ValueKey('screen-projects')),
-    const ProfileScreen(key: ValueKey('screen-profile')),
+  late final List<Widget> _screens = const [
+    DashboardScreen(key: ValueKey('screen-dashboard')),
+    CalendarScreen(key: ValueKey('screen-calendar')),
+    ProjectsScreen(key: ValueKey('screen-projects')),
+    ProfileScreen(key: ValueKey('screen-profile')),
   ];
 
-  final List<String> _labels = ['Inicio', 'Calendario', 'Proyectos', 'Perfil'];
-  final List<IconData> _icons = [
-    Icons.home_rounded,
-    Icons.calendar_month_rounded,
-    Icons.folder_copy_rounded,
-    Icons.person_rounded,
+  static const _items = <_RootItem>[
+    _RootItem(label: 'Inicio', icon: Icons.home_filled),
+    _RootItem(label: 'Calendario', icon: Icons.calendar_month_rounded),
+    _RootItem(label: 'Proyectos', icon: Icons.folder_copy_rounded),
+    _RootItem(label: 'Perfil', icon: Icons.person_rounded),
   ];
 
   void _onItemTapped(int index) {
     if (_selectedIndex == index) return;
-    HapticFeedback.lightImpact();
+    HapticFeedback.selectionClick();
     setState(() => _selectedIndex = index);
   }
 
@@ -42,82 +44,102 @@ class _RootShellState extends State<RootShell> {
     final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      extendBody: true, // Important for floating effect
-      body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 300),
-        switchInCurve: Curves.easeOutCubic,
-        switchOutCurve: Curves.easeInCubic,
-        child: _screens[_selectedIndex],
-      ),
+      extendBody: true,
+      body: IndexedStack(index: _selectedIndex, children: _screens),
       bottomNavigationBar: SafeArea(
-        child: Container(
-          margin: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-          height: 70,
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1E293B) : Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.1),
-                blurRadius: 20,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: List.generate(_icons.length, (index) {
-              final isSelected = _selectedIndex == index;
-              return GestureDetector(
-                onTap: () => _onItemTapped(index),
-                behavior: HitTestBehavior.opaque,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? theme.colorScheme.primary.withValues(alpha: 0.15)
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        _icons[index],
-                        color: isSelected
-                            ? theme.colorScheme.primary
-                            : (isDark ? Colors.grey : const Color(0xFF94A3B8)),
-                        size: 26,
-                      ),
-                      const SizedBox(height: 4),
-                      AnimatedDefaultTextStyle(
-                        duration: const Duration(milliseconds: 200),
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: isSelected
-                              ? FontWeight.w700
-                              : FontWeight.w500,
-                          color: isSelected
-                              ? theme.colorScheme.primary
-                              : (isDark
-                                    ? Colors.grey
-                                    : const Color(0xFF94A3B8)),
-                          fontFamily: 'Outfit', // Ensure font is applied
-                        ),
-                        child: Text(_labels[index]),
-                      ),
-                    ],
-                  ),
+        minimum: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(30),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: Container(
+              height: 82,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerLow.withValues(
+                  alpha: isDark ? 0.86 : 0.78,
                 ),
-              );
-            }),
+                borderRadius: BorderRadius.circular(30),
+                border: Border.all(
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.06)
+                      : Colors.white.withValues(alpha: 0.72),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.22 : 0.08),
+                    blurRadius: 24,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: List.generate(_items.length, (index) {
+                  final item = _items[index];
+                  final isSelected = index == _selectedIndex;
+                  final color = isSelected
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurfaceVariant;
+
+                  return Expanded(
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(24),
+                      onTap: () => _onItemTapped(index),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 6,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 220),
+                              curve: Curves.easeOutCubic,
+                              width: isSelected ? 30 : 18,
+                              height: 2,
+                              margin: const EdgeInsets.only(bottom: 6),
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? theme.colorScheme.primary
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                            ),
+                            Icon(item.icon, color: color, size: 22),
+                            const SizedBox(height: 3),
+                            Text(
+                              item.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textScaler: TextScaler.noScaling,
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                color: color,
+                                fontSize: 11,
+                                height: 1,
+                                fontWeight: isSelected
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+class _RootItem {
+  final String label;
+  final IconData icon;
+
+  const _RootItem({required this.label, required this.icon});
 }

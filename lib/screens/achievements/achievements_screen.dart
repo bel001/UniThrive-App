@@ -87,13 +87,32 @@ class AchievementsScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildStatItem('Desbloqueados', '$unlocked'),
-                _buildStatItem('Total', '$total'),
-                _buildStatItem('Completado', '$percentage%'),
-              ],
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 320;
+                final itemWidth = compact
+                    ? constraints.maxWidth
+                    : (constraints.maxWidth - 16) / 2;
+                return Wrap(
+                  alignment: WrapAlignment.spaceAround,
+                  spacing: 16,
+                  runSpacing: 16,
+                  children: [
+                    SizedBox(
+                      width: itemWidth,
+                      child: _buildStatItem('Desbloqueados', '$unlocked'),
+                    ),
+                    SizedBox(
+                      width: itemWidth,
+                      child: _buildStatItem('Total', '$total'),
+                    ),
+                    SizedBox(
+                      width: itemWidth,
+                      child: _buildStatItem('Completado', '$percentage%'),
+                    ),
+                  ],
+                );
+              },
             ),
           ],
         ),
@@ -103,6 +122,7 @@ class AchievementsScreen extends StatelessWidget {
 
   Widget _buildStatItem(String label, String value) {
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Text(
           value,
@@ -115,6 +135,7 @@ class AchievementsScreen extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           label,
+          textAlign: TextAlign.center,
           style: const TextStyle(
             color: Colors.white70,
             fontSize: 12,
@@ -167,21 +188,9 @@ class AchievementsScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            achievement.title,
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: unlocked
-                                  ? theme.textTheme.bodyLarge?.color
-                                  : theme.textTheme.bodyMedium?.color,
-                            ),
-                          ),
-                        ),
-                        Container(
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final badge = Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 8,
                             vertical: 4,
@@ -198,8 +207,35 @@ class AchievementsScreen extends StatelessWidget {
                               color: rarityColor,
                             ),
                           ),
-                        ),
-                      ],
+                        );
+                        final title = Text(
+                          achievement.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: unlocked
+                                ? theme.textTheme.bodyLarge?.color
+                                : theme.textTheme.bodyMedium?.color,
+                          ),
+                        );
+
+                        if (constraints.maxWidth < 220) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [title, const SizedBox(height: 8), badge],
+                          );
+                        }
+
+                        return Row(
+                          children: [
+                            Expanded(child: title),
+                            const SizedBox(width: 8),
+                            badge,
+                          ],
+                        );
+                      },
                     ),
                     const SizedBox(height: 4),
                     Text(

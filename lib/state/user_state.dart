@@ -1,18 +1,6 @@
 import 'package:flutter/material.dart';
 
-// Assuming UserProfileSummary is defined in project.dart or we need to move it.
-// Based on AppState analysis, UserProfileSummary seems to be used.
-// Let's check where UserProfileSummary is defined. It was in AppState file or imported?
-// Looking at AppState imports: import '../models/project.dart';
-// It might be in project.dart or defined in AppState.dart itself?
-// Wait, I didn't see UserProfileSummary definition in AppState view (it was truncated or I missed it).
-// Let's assume it's in a model file or I need to define it.
-// Actually, looking at AppState code: `final List<UserProfileSummary> _profiles = [];`
-// I need to find where UserProfileSummary is defined.
-// I will assume it's in `lib/models/user_profile.dart` or similar, or I might need to extract it.
-// Let's check `lib/models` content again.
-
-import '../models/user_profile_summary.dart'; // Placeholder, will fix if needed
+import '../models/user_profile_summary.dart';
 
 class UserState extends ChangeNotifier {
   bool _hasCompletedOnboarding = false;
@@ -30,23 +18,20 @@ class UserState extends ChangeNotifier {
   String? get activeProfileId => _activeProfileId;
 
   void loadFromMap(Map<String, dynamic> map) {
-    _hasCompletedOnboarding = map['hasCompletedOnboarding'] ?? false;
-    _userName = map['userName'] ?? 'Sofía';
-    _userEmail = map['userEmail'] ?? 'sofia@unithrive.app';
+    _profiles.clear();
+    _hasCompletedOnboarding = map['hasCompletedOnboarding'] as bool? ?? false;
+    _userName = map['userName'] as String? ?? 'Sofía';
+    _userEmail = map['userEmail'] as String? ?? 'sofia@unithrive.app';
     _activeProfileId = map['activeProfileId'];
 
     if (map['profiles'] != null) {
-      _profiles.clear();
       for (var p in map['profiles']) {
         _profiles.add(UserProfileSummary.fromJson(p));
       }
     }
 
-    // Logic to ensure at least one profile exists
-    if (_profiles.isEmpty) {
-      // We need a way to generate IDs, maybe pass a generator or use UUID
-      // For now, simple logic or rely on AppState to init
-    }
+    _ensureDefaultProfile();
+    _syncIdentityFromActiveProfile();
     notifyListeners();
   }
 
@@ -57,9 +42,6 @@ class UserState extends ChangeNotifier {
       'userEmail': _userEmail,
       'activeProfileId': _activeProfileId,
       'profiles': _profiles.map((p) => p.toJson()).toList(),
-      // profileData is complex, might need to be handled by DataState or here?
-      // In AppState, profileData stores the snapshot of DataState for each profile.
-      // This suggests UserState might need to coordinate with DataState for switching.
     };
   }
 
@@ -70,14 +52,13 @@ class UserState extends ChangeNotifier {
   }
 
   void reset() {
-    // This method's original implementation referred to `_profile` and `ProfileSnapshot`
-    // which are not defined in this UserState class.
-    // Adapting to reset the existing fields of UserState.
     _hasCompletedOnboarding = false;
     _userName = 'Sofía';
     _userEmail = 'sofia@unithrive.app';
-    _profiles.clear(); // Clear all profiles
-    _activeProfileId = null; // No active profile
+    _profiles
+      ..clear()
+      ..add(_buildProfile(name: _userName, email: _userEmail));
+    _activeProfileId = _profiles.first.id;
     notifyListeners();
   }
 
@@ -91,11 +72,7 @@ class UserState extends ChangeNotifier {
     final cleaned = name.trim();
     if (cleaned.isEmpty) return;
     _userName = cleaned;
-    final emailHandle = cleaned.toLowerCase().replaceAll(
-      RegExp(r'[^a-z0-9]'),
-      '',
-    );
-    _userEmail = '$emailHandle@unithrive.app';
+    _userEmail = _buildEmail(cleaned);
 
     if (_activeProfileId != null) {
       final idx = _profiles.indexWhere((p) => p.id == _activeProfileId);
@@ -109,37 +86,86 @@ class UserState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Profile management methods
-  void addUserProfile(String name) {
-    // Generate ID
-    final id = DateTime.now().millisecondsSinceEpoch.toString();
-    final newProfile = UserProfileSummary(
-      id: id,
-      name: name,
-      email: '', // Optional or generate
+  UserProfileSummary addUserProfile(String name) {
+    final cleaned = name.trim().isEmpty ? 'Nuevo perfil' : name.trim();
+    final newProfile = _buildProfile(
+      name: cleaned,
+      email: _buildEmail(cleaned),
     );
     _profiles.add(newProfile);
     notifyListeners();
+    return newProfile;
   }
 
-  void switchUserProfile(String profileId) {
-    if (_activeProfileId == profileId) return;
+  bool switchUserProfile(String profileId) {
+    if (_activeProfileId == profileId) return true;
     final idx = _profiles.indexWhere((p) => p.id == profileId);
-    if (idx == -1) return;
+    if (idx == -1) return false;
 
     _activeProfileId = profileId;
     _userName = _profiles[idx].name;
     _userEmail = _profiles[idx].email;
     notifyListeners();
+    return true;
   }
 
-  void deleteUserProfile(String profileId) {
-    if (_activeProfileId == profileId) {
-      // Cannot delete active profile, or must switch first
-      // For now, just return
-      return;
-    }
-    _profiles.removeWhere((p) => p.id == profileId);
+  bool deleteUserProfile(String profileId) {
+    if (_activeProfileId == profileId || _profiles.length <= 1) return false;
+    final index = _profiles.indexWhere((profile) => profile.id == profileId);
+    if (index == -1) return false;
+    _profiles.removeAt(index);
     notifyListeners();
+    return true;
+  }
+
+  void setOnboardingState(bool value) {
+    if (_hasCompletedOnboarding == value) return;
+    _hasCompletedOnboarding = value;
+    notifyListeners();
+  }
+
+  void ensureDefaultProfile() {
+    _ensureDefaultProfile();
+    _syncIdentityFromActiveProfile();
+    notifyListeners();
+  }
+
+  void _ensureDefaultProfile() {
+    if (_profiles.isEmpty) {
+      _profiles.add(_buildProfile(name: _userName, email: _userEmail));
+    }
+    final hasActiveProfile =
+        _activeProfileId != null &&
+        _profiles.any((profile) => profile.id == _activeProfileId);
+    if (!hasActiveProfile) {
+      _activeProfileId = _profiles.first.id;
+    }
+  }
+
+  void _syncIdentityFromActiveProfile() {
+    final active = _profiles.cast<UserProfileSummary?>().firstWhere(
+      (profile) => profile?.id == _activeProfileId,
+      orElse: () => _profiles.isNotEmpty ? _profiles.first : null,
+    );
+    if (active == null) return;
+    _activeProfileId = active.id;
+    _userName = active.name;
+    _userEmail = active.email;
+  }
+
+  UserProfileSummary _buildProfile({
+    required String name,
+    required String email,
+  }) {
+    return UserProfileSummary(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      name: name,
+      email: email,
+    );
+  }
+
+  String _buildEmail(String name) {
+    final emailHandle = name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+    return '${emailHandle.isEmpty ? 'perfil' : emailHandle}@unithrive.app';
   }
 }

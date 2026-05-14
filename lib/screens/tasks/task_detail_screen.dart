@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../state/app_state.dart';
@@ -7,6 +9,7 @@ import '../projects/project_detail_screen.dart';
 import '../../widgets/soft_page_route.dart';
 import '../../widgets/subtask_list_widget.dart';
 import '../../widgets/pomodoro_timer_widget.dart';
+import '../../widgets/uni_card.dart';
 import '../../utils/attachment_picker.dart';
 import '../focus/focus_session_screen.dart';
 import 'task_history_screen.dart';
@@ -42,6 +45,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   Widget build(BuildContext context) {
     final appState = AppStateProvider.of(context);
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
 
     // Get fresh task data
     final currentTask = appState.allTasks.firstWhere(
@@ -57,17 +61,17 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         onPressed: () => _showPomodoroTimer(context, appState, currentTask),
         icon: const Icon(Icons.timer),
         label: const Text('Pomodoro'),
-        backgroundColor: const Color(0xFF9FCFBB),
-        foregroundColor: Colors.white,
+        backgroundColor: scheme.primary,
+        foregroundColor: scheme.onPrimary,
       ),
       body: CustomScrollView(
         slivers: [
-          // App Bar
           SliverAppBar(
             pinned: true,
-            expandedHeight: 120,
-            backgroundColor: const Color(0xFF9FCFBB),
-            foregroundColor: Colors.white,
+            expandedHeight: 88,
+            backgroundColor: theme.colorScheme.surface,
+            foregroundColor: scheme.onSurface,
+            surfaceTintColor: Colors.transparent,
             leading: IconButton(
               icon: const Icon(Icons.close),
               onPressed: () => Navigator.pop(context),
@@ -81,9 +85,54 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                 onSelected: (value) {
                   if (value == 'delete') {
                     _confirmDelete(context, appState, currentTask);
+                  } else if (value == 'duplicate') {
+                    final copy = appState.duplicateTask(currentTask.id);
+                    if (copy != null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Tarea duplicada para seguir avanzando.',
+                          ),
+                        ),
+                      );
+                    }
+                  } else if (value == 'reschedule') {
+                    final updated = appState.rescheduleTaskSmart(
+                      currentTask.id,
+                    );
+                    if (updated != null && updated.dueDate != null) {
+                      final dueDate = updated.dueDate!;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Tarea reprogramada para ${dueDate.day}/${dueDate.month} a las ${dueDate.hour.toString().padLeft(2, '0')}:${dueDate.minute.toString().padLeft(2, '0')}.',
+                          ),
+                        ),
+                      );
+                    }
                   }
                 },
                 itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'duplicate',
+                    child: Row(
+                      children: [
+                        Icon(Icons.copy_all_rounded),
+                        SizedBox(width: 8),
+                        Text('Duplicar tarea'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'reschedule',
+                    child: Row(
+                      children: [
+                        Icon(Icons.event_repeat_rounded),
+                        SizedBox(width: 8),
+                        Text('Reprogramar'),
+                      ],
+                    ),
+                  ),
                   const PopupMenuItem(
                     value: 'delete',
                     child: Row(
@@ -101,11 +150,15 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               ),
             ],
             flexibleSpace: FlexibleSpaceBar(
-              title: Text(
-                _getCategoryFromTitle(currentTask.title),
-                style: const TextStyle(fontSize: 32),
+              titlePadding: const EdgeInsetsDirectional.only(
+                start: 72,
+                bottom: 16,
+                end: 20,
               ),
-              centerTitle: true,
+              title: Text(
+                'Detalle de tarea',
+                style: theme.textTheme.titleMedium,
+              ),
             ),
           ),
 
@@ -124,8 +177,11 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                   const SizedBox(height: 24),
                 ],
 
+                _buildTaskSignals(context, currentTask),
+                const SizedBox(height: 24),
+
                 // Quick stats
-                _buildQuickStats(currentTask),
+                _buildQuickStats(context, currentTask),
                 const SizedBox(height: 24),
 
                 // Time tracking & Pomodoro access
@@ -201,26 +257,24 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     AppState appState,
     Task task,
   ) {
+    final theme = Theme.of(context);
     return GestureDetector(
       onTap: () => _editTitle(context, appState, task),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(16),
-        ),
+      child: UniCard(
+        radius: 28,
         child: Row(
           children: [
             Expanded(
               child: Text(
                 _getTitleWithoutCategory(task.title),
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                ),
+                style: theme.textTheme.headlineSmall,
               ),
             ),
-            Icon(Icons.edit, size: 20, color: Colors.grey.shade600),
+            Icon(
+              Icons.edit_outlined,
+              size: 20,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ],
         ),
       ),
@@ -228,44 +282,41 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   }
 
   Widget _buildProjectBadge(BuildContext context, Project project) {
+    final theme = Theme.of(context);
     return GestureDetector(
       onTap: () {
         Navigator.of(context).push(
           SoftPageRoute(builder: (_) => ProjectDetailScreen(project: project)),
         );
       },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              project.color.withValues(alpha: 0.2),
-              project.color.withValues(alpha: 0.1),
-            ],
-          ),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: project.color.withValues(alpha: 0.5),
-            width: 1.5,
-          ),
-        ),
+      child: UniCard(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        radius: 24,
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.folder, color: project.color, size: 20),
-            const SizedBox(width: 8),
-            Text(
-              project.name,
-              style: TextStyle(
+            Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(
                 color: project.color,
-                fontWeight: FontWeight.w600,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                project.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleSmall,
               ),
             ),
             const SizedBox(width: 4),
             Icon(
               Icons.arrow_forward_ios,
               size: 12,
-              color: project.color.withValues(alpha: 0.7),
+              color: theme.colorScheme.onSurfaceVariant,
             ),
           ],
         ),
@@ -273,31 +324,98 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     );
   }
 
-  Widget _buildQuickStats(Task task) {
-    return Row(
-      children: [
-        Expanded(
-          child: _buildStatCard(
+  Widget _buildQuickStats(BuildContext context, Task task) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 500;
+        final cards = [
+          _buildStatCard(
+            context: context,
             icon: Icons.calendar_today,
             label: 'Fecha límite',
             value: task.dueDate != null
                 ? '${task.dueDate!.day}/${task.dueDate!.month}/${task.dueDate!.year}'
                 : 'Sin fecha',
-            color: const Color(0xFF9FCFBB),
+            color: Theme.of(context).colorScheme.primary,
             onTap: () => _editDueDate(context, task),
           ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _buildStatCard(
+          _buildStatCard(
+            context: context,
             icon: Icons.bolt,
             label: 'Energía',
             value: task.energy.name.toUpperCase(),
             color: _getEnergyColor(task.energy),
             onTap: () => _editEnergy(context, task),
           ),
-        ),
-      ],
+          _buildStatCard(
+            context: context,
+            icon: Icons.flag_outlined,
+            label: 'Prioridad',
+            value: task.priority.priorityLabel,
+            color: _getPriorityColor(task.priority),
+            onTap: () => _editPriority(context, task),
+          ),
+        ];
+
+        if (compact) {
+          return Column(
+            children: cards
+                .map(
+                  (card) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: SizedBox(width: double.infinity, child: card),
+                  ),
+                )
+                .toList(),
+          );
+        }
+
+        return Row(
+          children: [
+            for (var i = 0; i < cards.length; i++) ...[
+              Expanded(child: cards[i]),
+              if (i != cards.length - 1) const SizedBox(width: 12),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildTaskSignals(BuildContext context, Task task) {
+    final theme = Theme.of(context);
+    return UniCard(
+      radius: 24,
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          _SignalChip(
+            icon: Icons.flag_rounded,
+            label: task.priority.priorityLabel,
+            color: _getPriorityColor(task.priority),
+          ),
+          if (task.isOverdue)
+            _SignalChip(
+              icon: Icons.warning_amber_rounded,
+              label: 'Vencida',
+              color: theme.colorScheme.error,
+            )
+          else if (task.isDueSoon)
+            _SignalChip(
+              icon: Icons.schedule_rounded,
+              label: 'Próxima',
+              color: Colors.orange,
+            ),
+          ...task.labels.map(
+            (label) => _SignalChip(
+              icon: Icons.sell_outlined,
+              label: label,
+              color: theme.colorScheme.primary,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -307,8 +425,9 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     Task task,
   ) {
     final theme = Theme.of(context);
-    final workSessions =
-        task.pomodoroSessions.where((s) => !s.isBreak).toList();
+    final workSessions = task.pomodoroSessions
+        .where((s) => !s.isBreak)
+        .toList();
     final totalMinutes = task.timeSpentMinutes;
 
     String formatMinutes(int minutes) {
@@ -323,24 +442,21 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       return completed ? base : '$base · incompleta';
     }
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(16),
-      ),
+    return UniCard(
+      radius: 28,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               const Icon(Icons.timer_outlined),
-              const SizedBox(width: 8),
               const Text(
                 'Tiempo dedicado',
                 style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
               ),
-              const Spacer(),
               Text(
                 '${formatMinutes(totalMinutes)} · ${workSessions.length} sesiones',
                 style: theme.textTheme.bodySmall,
@@ -360,36 +476,57 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             },
             icon: const Icon(Icons.play_circle_fill),
             label: const Text('Empezar tiempo de concentración'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF9FCFBB),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-            ),
           ),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () => _showPomodoroTimer(context, appState, task),
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text('Iniciar Pomodoro'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF9FCFBB),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final stackButtons = constraints.maxWidth < 360;
+              if (stackButtons) {
+                return Column(
+                  children: [
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () =>
+                            _showPomodoroTimer(context, appState, task),
+                        icon: const Icon(Icons.play_arrow),
+                        label: const Text('Iniciar Pomodoro'),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () =>
+                            _showTasksTimeHistory(context, appState),
+                        icon: const Icon(Icons.history),
+                        label: const Text('Ver historial'),
+                      ),
+                    ),
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () =>
+                          _showPomodoroTimer(context, appState, task),
+                      icon: const Icon(Icons.play_arrow),
+                      label: const Text('Iniciar Pomodoro'),
+                    ),
                   ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => _showTasksTimeHistory(context, appState),
-                  icon: const Icon(Icons.history),
-                  label: const Text('Ver historial'),
-                ),
-              ),
-            ],
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _showTasksTimeHistory(context, appState),
+                      icon: const Icon(Icons.history),
+                      label: const Text('Ver historial'),
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
           if (workSessions.isNotEmpty) ...[
             const SizedBox(height: 12),
@@ -408,10 +545,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                   .map(
                     (s) => Chip(
                       label: Text(
-                        sessionLabel(
-                          s.actualDurationMinutes,
-                          s.wasCompleted,
-                        ),
+                        sessionLabel(s.actualDurationMinutes, s.wasCompleted),
                       ),
                       avatar: const Icon(Icons.access_time, size: 16),
                     ),
@@ -425,21 +559,19 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   }
 
   Widget _buildStatCard({
+    required BuildContext context,
     required IconData icon,
     required String label,
     required String value,
     required Color color,
     required VoidCallback onTap,
   }) {
+    final theme = Theme.of(context);
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withValues(alpha: 0.3), width: 2),
-        ),
+      child: UniCard(
+        radius: 24,
+        color: color.withValues(alpha: 0.09),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -447,22 +579,19 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               children: [
                 Icon(icon, size: 20, color: color),
                 const Spacer(),
-                Icon(Icons.edit, size: 16, color: Colors.grey.shade600),
+                Icon(
+                  Icons.edit_outlined,
+                  size: 16,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ],
             ),
             const SizedBox(height: 8),
-            Text(
-              label,
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-            ),
+            Text(label, style: theme.textTheme.labelMedium),
             const SizedBox(height: 4),
             Text(
               value,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: color,
-              ),
+              style: theme.textTheme.titleMedium?.copyWith(color: color),
             ),
           ],
         ),
@@ -481,7 +610,21 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     }
   }
 
+  Color _getPriorityColor(TaskPriority priority) {
+    switch (priority) {
+      case TaskPriority.low:
+        return Colors.green;
+      case TaskPriority.medium:
+        return Colors.blue;
+      case TaskPriority.high:
+        return Colors.orange;
+      case TaskPriority.urgent:
+        return Colors.red;
+    }
+  }
+
   Widget _buildDescription(BuildContext context, AppState appState, Task task) {
+    final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -534,10 +677,6 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                       );
                       setState(() => _isEditingDescription = false);
                     },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF9FCFBB),
-                      foregroundColor: Colors.white,
-                    ),
                     child: const Text('Guardar'),
                   ),
                 ],
@@ -545,21 +684,16 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             ],
           )
         else
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              borderRadius: BorderRadius.circular(12),
-            ),
+          UniCard(
+            radius: 24,
             child: Text(
               task.description?.isEmpty ?? true
                   ? 'Sin descripción. Toca "Editar" para agregar una.'
                   : task.description!,
-              style: TextStyle(
+              style: theme.textTheme.bodyMedium?.copyWith(
                 color: task.description?.isEmpty ?? true
-                    ? Colors.grey.shade500
-                    : Colors.grey.shade800,
+                    ? theme.colorScheme.onSurfaceVariant
+                    : theme.colorScheme.onSurface,
               ),
             ),
           ),
@@ -576,20 +710,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 12),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: Image.asset(
-            task.attachmentPath!,
-            height: 200,
-            width: double.infinity,
-            fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => Container(
-              height: 200,
-              color: Colors.grey.shade200,
-              child: const Center(child: Icon(Icons.broken_image, size: 48)),
-            ),
-          ),
-        ),
+        _AttachmentCard(value: task.attachmentPath!),
       ],
     );
   }
@@ -600,14 +721,9 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     Task task,
   ) {
     return OutlinedButton.icon(
-      onPressed: () async {
-        final path = await AttachmentPicker.pickImage();
-        if (path != null) {
-          appState.updateTask(taskId: task.id, attachmentPath: path);
-        }
-      },
+      onPressed: () => _pickTaskAttachment(context, appState, task),
       icon: const Icon(Icons.attach_file),
-      label: const Text('Agregar imagen'),
+      label: const Text('Agregar adjunto'),
       style: OutlinedButton.styleFrom(
         padding: const EdgeInsets.all(16),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -620,6 +736,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     AppState appState,
     Task task,
   ) {
+    final theme = Theme.of(context);
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton.icon(
@@ -639,17 +756,16 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         ),
         style: ElevatedButton.styleFrom(
           backgroundColor: task.completed
-              ? Colors.grey.shade400
-              : const Color(0xFF9FCFBB),
-          foregroundColor: Colors.white,
+              ? theme.colorScheme.surfaceContainerHighest
+              : theme.colorScheme.primary,
+          foregroundColor: task.completed
+              ? theme.colorScheme.onSurface
+              : theme.colorScheme.onPrimary,
           padding: const EdgeInsets.symmetric(vertical: 16),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          elevation: 4,
-          shadowColor: task.completed
-              ? Colors.transparent
-              : const Color(0xFF9FCFBB).withValues(alpha: 0.4),
+          elevation: 0,
         ),
       ),
     );
@@ -686,7 +802,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               }
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF9FCFBB),
+              backgroundColor: Theme.of(context).colorScheme.primary,
             ),
             child: const Text('Guardar'),
           ),
@@ -726,10 +842,42 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                 isSelected
                     ? Icons.radio_button_checked
                     : Icons.radio_button_unchecked,
-                color: isSelected ? const Color(0xFF9FCFBB) : Colors.grey,
+                color: isSelected
+                    ? Theme.of(context).colorScheme.primary
+                    : Colors.grey,
               ),
               onTap: () {
                 appState.updateTask(taskId: task.id, energy: level);
+                Navigator.pop(context);
+              },
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  void _editPriority(BuildContext context, Task task) {
+    final appState = AppStateProvider.of(context);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Prioridad'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: TaskPriority.values.map((priority) {
+            final isSelected = task.priority == priority;
+            return ListTile(
+              title: Text(priority.priorityLabel),
+              leading: Icon(
+                isSelected
+                    ? Icons.radio_button_checked
+                    : Icons.radio_button_unchecked,
+                color: isSelected ? _getPriorityColor(priority) : Colors.grey,
+              ),
+              onTap: () {
+                appState.updateTask(taskId: task.id, priority: priority);
                 Navigator.pop(context);
               },
             );
@@ -935,8 +1083,199 @@ Creado con UniThrive
 
   void _showTasksTimeHistory(BuildContext context, AppState appState) {
     // Navega al historial global de tiempo para ver métricas agregadas.
-    Navigator.of(context).push(
-      SoftPageRoute(builder: (_) => const TaskHistoryScreen()),
+    Navigator.of(
+      context,
+    ).push(SoftPageRoute(builder: (_) => const TaskHistoryScreen()));
+  }
+
+  Future<void> _pickTaskAttachment(
+    BuildContext context,
+    AppState appState,
+    Task task,
+  ) async {
+    final value = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Adjuntar foto'),
+              onTap: () async {
+                final path = await AttachmentPicker.pickImage();
+                if (!sheetContext.mounted) return;
+                Navigator.of(sheetContext).pop(path);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.attach_file_rounded),
+              title: const Text('Adjuntar archivo'),
+              onTap: () async {
+                final path = await AttachmentPicker.pickAnyFile();
+                if (!sheetContext.mounted) return;
+                Navigator.of(sheetContext).pop(path);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.link_rounded),
+              title: const Text('Guardar enlace'),
+              onTap: () async {
+                final controller = TextEditingController();
+                final link = await showDialog<String>(
+                  context: sheetContext,
+                  builder: (dialogContext) => AlertDialog(
+                    title: const Text('Agregar enlace'),
+                    content: TextField(
+                      controller: controller,
+                      keyboardType: TextInputType.url,
+                      decoration: const InputDecoration(
+                        hintText: 'https://...',
+                      ),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        child: const Text('Cancelar'),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.of(
+                          dialogContext,
+                        ).pop(controller.text.trim()),
+                        child: const Text('Guardar'),
+                      ),
+                    ],
+                  ),
+                );
+                if (!sheetContext.mounted) return;
+                Navigator.of(
+                  sheetContext,
+                ).pop(link == null || link.isEmpty ? null : link);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+    if (value != null && value.isNotEmpty) {
+      appState.updateTask(taskId: task.id, attachmentPath: value);
+    }
+  }
+}
+
+class _SignalChip extends StatelessWidget {
+  const _SignalChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(color: color, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AttachmentCard extends StatelessWidget {
+  const _AttachmentCard({required this.value});
+
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    if (AttachmentPicker.isLink(value)) {
+      return UniCard(
+        radius: 20,
+        child: Row(
+          children: [
+            const Icon(Icons.link_rounded),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(value, maxLines: 2, overflow: TextOverflow.ellipsis),
+            ),
+            IconButton(
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: value));
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('Enlace copiado')));
+              },
+              icon: const Icon(Icons.copy_rounded),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (AttachmentPicker.isImage(value)) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Image.file(
+          File(value),
+          height: 200,
+          width: double.infinity,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Container(
+            height: 200,
+            color: Colors.grey.shade200,
+            child: const Center(child: Icon(Icons.broken_image, size: 48)),
+          ),
+        ),
+      );
+    }
+
+    return UniCard(
+      radius: 20,
+      child: Row(
+        children: [
+          Icon(
+            AttachmentPicker.isPdf(value)
+                ? Icons.picture_as_pdf_outlined
+                : Icons.insert_drive_file_outlined,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              AttachmentPicker.fileName(value),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          IconButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: value));
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('Ruta copiada')));
+            },
+            icon: const Icon(Icons.copy_rounded),
+          ),
+        ],
+      ),
     );
   }
 }

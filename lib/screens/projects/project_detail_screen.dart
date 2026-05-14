@@ -111,8 +111,10 @@ class ProjectDetailScreen extends StatelessWidget {
             minHeight: 10,
           ),
           const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            spacing: 12,
+            runSpacing: 6,
+            alignment: WrapAlignment.spaceBetween,
             children: [
               Text(
                 '${project.progress.toInt()}% del plan cumplido',

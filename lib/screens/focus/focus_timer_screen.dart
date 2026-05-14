@@ -3,11 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../core/constants.dart';
+import '../../core/design_tokens.dart';
 import '../../state/app_state.dart';
+import '../../widgets/uni_card.dart';
 import '../../widgets/uni_primary_button.dart';
 
 class FocusTimerScreen extends StatefulWidget {
   final String focusLabel;
+
   const FocusTimerScreen({super.key, required this.focusLabel});
 
   @override
@@ -55,125 +58,168 @@ class _FocusTimerScreenState extends State<FocusTimerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isFocus = _phase == _TimerPhase.focus;
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final title = isFocus ? 'Enfoque' : 'Descanso';
-    final bgColor = isDark
-        ? const Color(0xFF050714)
-        : (isFocus ? const Color(0xFFF6F4FF) : const Color(0xFFE6F6F0));
-    final panelColor = isDark ? const Color(0xFF11142A) : Colors.white;
-    final accent = isFocus
-        ? (isDark ? const Color(0xFFB8A9FF) : const Color(0xFF6C4DFF))
-        : (isDark ? const Color(0xFF7CE0A0) : const Color(0xFF16A34A));
-    final secondaryText = isDark
-        ? Colors.white70
-        : const Color(0xFF4B5563);
+    final isFocus = _phase == _TimerPhase.focus;
+    final phaseColor = isFocus
+        ? theme.colorScheme.primary
+        : DesignTokens.success;
+    final phaseBackground = isFocus
+        ? theme.colorScheme.primaryContainer.withValues(alpha: 0.72)
+        : const Color(0xFFDDF3E8);
 
     return Scaffold(
-      backgroundColor: bgColor,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        foregroundColor: isDark ? Colors.white : const Color(0xFF0F172A),
-        title: Text(title),
-      ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          const SizedBox(height: 40),
-          if (isFocus)
-            Text(
-              'Enfoque: ${widget.focusLabel}',
-              style: TextStyle(
-                color: accent,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(
+                DesignTokens.screenHorizontal,
+                12,
+                DesignTokens.screenHorizontal,
+                24,
               ),
-            )
-          else
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Text(
-                'Buen trabajo, tómate un descanso consciente.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: secondaryText,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back_rounded),
+                      onPressed: () => Navigator.of(context).maybePop(),
+                    ),
+                    const SizedBox(height: 8),
+                    UniCard(
+                      radius: 34,
+                      color: phaseBackground,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _PhasePill(
+                            icon: isFocus
+                                ? Icons.bolt_rounded
+                                : Icons.spa_rounded,
+                            label: isFocus ? 'Enfoque activo' : 'Descanso',
+                            color: phaseColor,
+                          ),
+                          const SizedBox(height: 18),
+                          Text(
+                            isFocus
+                                ? 'Sostén la atención sin ruido alrededor.'
+                                : 'Respira, baja el ritmo y prepara el siguiente bloque.',
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              color: theme.colorScheme.onPrimaryContainer,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            isFocus
+                                ? 'Estás trabajando en “${widget.focusLabel}”. Mantén esta sesión limpia y continua.'
+                                : 'Tu foco ya hizo trabajo. Usa este momento para soltar tensión y volver mejor.',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.onPrimaryContainer
+                                  .withValues(alpha: 0.78),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    UniCard(
+                      radius: 34,
+                      child: Column(
+                        children: [
+                          _buildTimerRing(phaseColor: phaseColor),
+                          const SizedBox(height: 18),
+                          LayoutBuilder(
+                            builder: (context, innerConstraints) {
+                              final stacked = innerConstraints.maxWidth < 340;
+                              final stats = [
+                                _SessionStat(
+                                  label: 'Fase',
+                                  value: isFocus ? 'Enfoque' : 'Descanso',
+                                ),
+                                _SessionStat(
+                                  label: 'Duración',
+                                  value: _formatDuration(_total),
+                                ),
+                              ];
+
+                              if (stacked) {
+                                return Column(
+                                  children: [
+                                    for (var i = 0; i < stats.length; i++) ...[
+                                      stats[i],
+                                      if (i != stats.length - 1)
+                                        const SizedBox(height: 10),
+                                    ],
+                                  ],
+                                );
+                              }
+
+                              return Row(
+                                children: [
+                                  Expanded(child: stats[0]),
+                                  const SizedBox(width: 10),
+                                  Expanded(child: stats[1]),
+                                ],
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    UniPrimaryButton(
+                      label: _isRunning ? 'Pausar sesión' : 'Reanudar sesión',
+                      backgroundColor: phaseColor,
+                      icon: _isRunning
+                          ? Icons.pause_rounded
+                          : Icons.play_arrow_rounded,
+                      onPressed: _toggleTimer,
+                    ),
+                    const SizedBox(height: 10),
+                    Center(
+                      child: TextButton(
+                        onPressed: _finishSession,
+                        child: const Text('Finalizar sesión'),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
-          const SizedBox(height: 24),
-          _buildTimerRing(
-            isFocus: isFocus,
-            isDark: isDark,
-            accent: accent,
-            panelColor: panelColor,
-            secondary: secondaryText,
-          ),
-          const SizedBox(height: 32),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: UniPrimaryButton(
-              label: _isRunning ? 'Pausar' : 'Reanudar',
-              backgroundColor: accent,
-              onPressed: _toggleTimer,
-            ),
-          ),
-          TextButton(
-            onPressed: _finishSession,
-            child: Text(
-              'Finalizar sesión',
-              style: TextStyle(color: secondaryText),
-            ),
-          ),
-        ],
+            );
+          },
+        ),
       ),
     );
   }
 
-  Widget _buildTimerRing({
-    required bool isFocus,
-    required bool isDark,
-    required Color accent,
-    required Color panelColor,
-    required Color secondary,
-  }) {
+  Widget _buildTimerRing({required Color phaseColor}) {
+    final theme = Theme.of(context);
     final progress = 1 - (_remaining.inSeconds / _total.inSeconds);
-    final trackColor = isFocus
-        ? (isDark ? const Color(0xFF2D2750) : const Color(0xFFDCD5FF))
-        : (isDark ? const Color(0xFF1B3B2A) : const Color(0xFFCDEEDB));
-    final timeColor = isDark ? Colors.white : const Color(0xFF0F172A);
+    final screenWidth = MediaQuery.of(context).size.width;
+    final ringSize = (screenWidth - 132).clamp(170.0, 240.0);
+
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 32),
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: panelColor,
-        borderRadius: BorderRadius.circular(36),
-        boxShadow: isDark
-            ? null
-            : [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.06),
-                  blurRadius: 30,
-                  offset: const Offset(0, 20),
-                ),
-              ],
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(28),
       ),
       child: SizedBox(
-        height: 240,
-        width: double.infinity,
+        height: ringSize,
+        width: ringSize,
         child: Stack(
           alignment: Alignment.center,
           children: [
             SizedBox(
-              height: 220,
-              width: 220,
+              height: ringSize,
+              width: ringSize,
               child: CircularProgressIndicator(
                 value: progress,
                 strokeWidth: 16,
-                backgroundColor: trackColor,
-                valueColor: AlwaysStoppedAnimation(accent),
+                backgroundColor: theme.colorScheme.surfaceContainerHigh,
+                valueColor: AlwaysStoppedAnimation(phaseColor),
               ),
             ),
             Column(
@@ -181,19 +227,14 @@ class _FocusTimerScreenState extends State<FocusTimerScreen> {
               children: [
                 Text(
                   _formattedTime,
-                  style: TextStyle(
-                    fontSize: 48,
-                    fontWeight: FontWeight.w700,
-                    color: timeColor,
-                  ),
+                  style: theme.textTheme.displayLarge?.copyWith(fontSize: 42),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  isFocus ? 'Tiempo restante' : 'Descanso activo',
-                  style: TextStyle(
-                    color: secondary,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  _phase == _TimerPhase.focus
+                      ? 'Tiempo restante'
+                      : 'Pausa consciente',
+                  style: theme.textTheme.bodyMedium,
                 ),
               ],
             ),
@@ -205,7 +246,9 @@ class _FocusTimerScreenState extends State<FocusTimerScreen> {
 
   void _startPhase(_TimerPhase phase) {
     _phase = phase;
-    _total = phase == _TimerPhase.focus ? Constants.focusDuration : Constants.breakDuration;
+    _total = phase == _TimerPhase.focus
+        ? Constants.focusDuration
+        : Constants.breakDuration;
     _remaining = _total;
     _restartTicker();
     setState(() {});
@@ -247,10 +290,99 @@ class _FocusTimerScreenState extends State<FocusTimerScreen> {
   }
 
   String get _formattedTime {
-    final minutes = _remaining.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final seconds = _remaining.inSeconds.remainder(60).toString().padLeft(2, '0');
+    final minutes = _remaining.inMinutes
+        .remainder(60)
+        .toString()
+        .padLeft(2, '0');
+    final seconds = _remaining.inSeconds
+        .remainder(60)
+        .toString()
+        .padLeft(2, '0');
     final hours = _remaining.inHours;
     final prefix = hours > 0 ? '${hours.toString().padLeft(2, '0')}:' : '';
     return '$prefix$minutes:$seconds';
   }
+}
+
+class _PhasePill extends StatelessWidget {
+  const _PhasePill({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface.withValues(alpha: 0.68),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 220),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelMedium,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SessionStat extends StatelessWidget {
+  const _SessionStat({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: theme.textTheme.labelMedium),
+          const SizedBox(height: 6),
+          Text(value, style: theme.textTheme.titleLarge),
+        ],
+      ),
+    );
+  }
+}
+
+String _formatDuration(Duration duration) {
+  final totalMinutes = duration.inMinutes;
+  if (totalMinutes < 60) {
+    return '$totalMinutes min';
+  }
+
+  final hours = totalMinutes ~/ 60;
+  final minutes = totalMinutes % 60;
+  if (minutes == 0) {
+    return '$hours h';
+  }
+  return '$hours h $minutes min';
 }

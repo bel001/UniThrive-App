@@ -12,37 +12,70 @@ class UniPrimaryButton extends StatelessWidget {
     super.key,
     required this.label,
     required this.onPressed,
-    this.backgroundColor = const Color(0xFF9FCFBB),
-    this.foregroundColor = Colors.white,
+    this.backgroundColor = const Color(0xFF7DB8A4),
+    this.foregroundColor = const Color(0xFF101828),
     this.icon,
     this.expand = true,
   });
 
   @override
   Widget build(BuildContext context) {
-    final child = Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (icon != null) ...[Icon(icon!, size: 20), const SizedBox(width: 8)],
-        Text(
-          label,
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
-        ),
-      ],
+    final theme = Theme.of(context);
+    final child = FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon!, size: 20),
+            const SizedBox(width: 8),
+          ],
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
     );
 
-    final button = ElevatedButton(
-      style: ElevatedButton.styleFrom(
-        elevation: 0,
-        backgroundColor: backgroundColor,
-        foregroundColor: foregroundColor,
-        padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 24),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)),
-        textStyle: const TextStyle(letterSpacing: 0.2),
+    final button = Material(
+      color: Colors.transparent,
+      child: Ink(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              backgroundColor,
+              Color.lerp(backgroundColor, Colors.black, 0.1) ?? backgroundColor,
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: onPressed,
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 54),
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 22),
+            child: DefaultTextStyle(
+              style: theme.textTheme.labelLarge?.copyWith(
+                    color: foregroundColor,
+                  ) ??
+                  TextStyle(color: foregroundColor),
+              child: IconTheme(
+                data: IconThemeData(color: foregroundColor),
+                child: child,
+              ),
+            ),
+          ),
+        ),
       ),
-      onPressed: onPressed,
-      child: child,
     );
 
     if (!expand) return button;

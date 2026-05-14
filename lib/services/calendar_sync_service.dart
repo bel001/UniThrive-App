@@ -67,7 +67,9 @@ class CalendarSyncService {
     for (final block in blocks) {
       buffer
         ..writeln('BEGIN:VEVENT')
-        ..writeln('UID:${block.id}@unithrive')
+        ..writeln(
+          'UID:${block.id}-${block.start.millisecondsSinceEpoch}@unithrive',
+        )
         ..writeln('SUMMARY:${block.title}')
         ..writeln('DTSTART:${_formatDate(block.start)}')
         ..writeln('DTEND:${_formatDate(block.end)}')
