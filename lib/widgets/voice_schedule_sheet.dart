@@ -5,28 +5,38 @@ import 'package:intl/intl.dart';
 import '../core/design_tokens.dart';
 import '../models/schedule.dart';
 import '../models/voice_schedule_draft.dart';
-import '../services/voice_ai_parse_service.dart';
 import '../services/voice_schedule_parser.dart';
 import '../services/voice_task_capture_service.dart';
 import '../state/app_state.dart';
 import 'uni_card.dart';
 import 'uni_primary_button.dart';
 
+/// Sheet de horario 100% local — parser en español inteligente con soporte multiclase,
+/// fecha exacta, visualizador de audio y prevención de conflictos.
+Future<void> showVoiceScheduleSheet(
+  BuildContext context, {
+  DateTime? referenceDay,
+}) async {
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => VoiceScheduleSheet(referenceDay: referenceDay),
+  );
+}
+
 class VoiceScheduleSheet extends StatefulWidget {
   final DateTime? referenceDay;
-  final VoiceAiParseService aiParseService;
   final VoiceTaskCaptureService captureService;
   final VoiceScheduleParser parser;
 
   VoiceScheduleSheet({
     super.key,
     this.referenceDay,
-    VoiceAiParseService? aiParseService,
     VoiceTaskCaptureService? captureService,
     VoiceScheduleParser? parser,
-  }) : aiParseService = aiParseService ?? VoiceAiParseService.instance,
-       captureService = captureService ?? VoiceTaskCaptureService.instance,
-       parser = parser ?? const VoiceScheduleParser();
+  })  : captureService = captureService ?? VoiceTaskCaptureService.instance,
+        parser = parser ?? const VoiceScheduleParser();
 
   @override
   State<VoiceScheduleSheet> createState() => _VoiceScheduleSheetState();
@@ -35,17 +45,30 @@ class VoiceScheduleSheet extends StatefulWidget {
 class _VoiceScheduleSheetState extends State<VoiceScheduleSheet> {
   late final TextEditingController _titleController;
   late final TextEditingController _locationController;
-  late VoiceScheduleDraft _draft;
+  
+  List<VoiceScheduleDraft> _drafts = [];
+  int _activeDraftIndex = 0;
+
+  VoiceScheduleDraft get _draft =>
+      _drafts.isNotEmpty && _activeDraftIndex < _drafts.length
+          ? _drafts[_activeDraftIndex]
+          : VoiceScheduleDraft.empty(referenceTime: _referenceDate);
+
+  set _draft(VoiceScheduleDraft value) {
+    if (_drafts.isEmpty) {
+      _drafts = [value];
+      _activeDraftIndex = 0;
+    } else {
+      _drafts[_activeDraftIndex] = value;
+    }
+  }
 
   String _statusText =
       'Dicta algo como “Mi clase de Física es lunes y miércoles de 8 a 10 am en aula B203 hasta julio”.';
   String? _captureError;
   bool _isListening = false;
   bool _isSaving = false;
-  bool _isEnhancingWithAi = false;
   double _soundLevel = 0;
-  String? _aiStatusText;
-  String? _lastAiTranscript;
 
   DateTime get _referenceDate {
     final source = widget.referenceDay ?? DateTime.now();
@@ -62,9 +85,10 @@ class _VoiceScheduleSheetState extends State<VoiceScheduleSheet> {
   @override
   void initState() {
     super.initState();
-    _draft = VoiceScheduleDraft.empty(referenceTime: _referenceDate);
-    _titleController = TextEditingController(text: _draft.title);
-    _locationController = TextEditingController(text: _draft.location);
+    final emptyDraft = VoiceScheduleDraft.empty(referenceTime: _referenceDate);
+    _drafts = [emptyDraft];
+    _titleController = TextEditingController(text: emptyDraft.title);
+    _locationController = TextEditingController(text: emptyDraft.location);
   }
 
   @override
@@ -75,14 +99,22 @@ class _VoiceScheduleSheetState extends State<VoiceScheduleSheet> {
     super.dispose();
   }
 
+  void _syncControllers() {
+    _titleController.value = TextEditingValue(
+      text: _draft.title,
+      selection: TextSelection.collapsed(offset: _draft.title.length),
+    );
+    _locationController.value = TextEditingValue(
+      text: _draft.location,
+      selection: TextSelection.collapsed(offset: _draft.location.length),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final appState = AppStateProvider.of(context);
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final level = (_soundLevel.abs() / 50).clamp(0.0, 1.0);
-    final aiEnabled =
-        appState.voiceAiEnabled && appState.voiceAiEndpointUrl.isNotEmpty;
 
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
@@ -90,378 +122,559 @@ class _VoiceScheduleSheetState extends State<VoiceScheduleSheet> {
         filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
         child: Container(
           decoration: BoxDecoration(
-            color: theme.colorScheme.surface.withValues(alpha: 0.85),
+            color: theme.colorScheme.surface.withValues(alpha: 0.88),
           ),
-      padding: EdgeInsets.only(
-        left: DesignTokens.screenHorizontal,
-        right: DesignTokens.screenHorizontal,
-        top: 18,
-        bottom: bottomInset + 24,
-      ),
-      child: SafeArea(
-        top: false,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 42,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.outlineVariant,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 18),
-              Row(
+          padding: EdgeInsets.only(
+            left: DesignTokens.screenHorizontal,
+            right: DesignTokens.screenHorizontal,
+            top: 18,
+            bottom: bottomInset + 24,
+          ),
+          child: SafeArea(
+            top: false,
+            child: SingleChildScrollView(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
+                  Center(
+                    child: Container(
+                      width: 42,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.outlineVariant,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Agregar horario por voz',
+                              style: theme.textTheme.headlineSmall,
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Dicta tus clases, fechas o multiclases en voz natural (ej. "Jueves 27 agosto 6 am a 8:30 pm").',
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      IconButton.filledTonal(
+                        tooltip: _isListening
+                            ? 'Detener dictado'
+                            : 'Iniciar dictado',
+                        onPressed: _isSaving ? null : _toggleListening,
+                        icon: Icon(
+                          _isListening
+                              ? Icons.stop_rounded
+                              : Icons.mic_rounded,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        tooltip: 'Cerrar',
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  UniCard(
+                    radius: 26,
+                    padding: const EdgeInsets.all(18),
+                    color: theme.colorScheme.surfaceContainerLow,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Agregar horario por voz',
-                          style: theme.textTheme.headlineSmall,
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            final chip = _ScheduleStatusChip(
+                              label: _isListening
+                                  ? 'Escuchando voz...'
+                                  : 'Vista previa local',
+                              icon: _isListening
+                                  ? Icons.graphic_eq
+                                  : Icons.auto_awesome_rounded,
+                              tone: _isListening
+                                  ? theme.colorScheme.primaryContainer
+                                  : theme.colorScheme.surfaceContainerHighest,
+                              foregroundColor: _isListening
+                                  ? theme.colorScheme.primary
+                                  : theme.colorScheme.onSurface,
+                            );
+                            if (constraints.maxWidth < 340) {
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  chip,
+                                  const SizedBox(height: 10),
+                                  Text(
+                                    _statusText,
+                                    maxLines: 3,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.bodySmall,
+                                  ),
+                                ],
+                              );
+                            }
+                            return Row(
+                              children: [
+                                chip,
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    _statusText,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.bodySmall,
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
                         ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Dicta el nombre de la clase, los días, el rango horario y, si quieres, hasta cuándo se repite.',
-                          style: theme.textTheme.bodyMedium,
+                        const SizedBox(height: 14),
+                        // Sound Wave Visualizer
+                        _VoiceSoundWaveVisualizer(
+                          soundLevel: level,
+                          isListening: _isListening,
+                        ),
+                        const SizedBox(height: 14),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surface,
+                            borderRadius: BorderRadius.circular(22),
+                            border: Border.all(
+                              color: theme.colorScheme.outlineVariant,
+                            ),
+                          ),
+                          child: Text(
+                            _draft.hasTranscript
+                                ? _draft.transcript
+                                : 'Dicta de forma continua. Puedes incluir fechas exactas, varias clases a la vez ("Cálculo los lunes y Física los martes") o materias virtuales por Zoom.',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: _draft.hasTranscript
+                                  ? theme.colorScheme.onSurface
+                                  : theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                        if (_captureError != null) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            _captureError!,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.error,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+
+                  // Batch draft tabs selector if multi-class dictation detected
+                  if (_drafts.length > 1) ...[
+                    const SizedBox(height: 18),
+                    Text(
+                      'Detectamos ${_drafts.length} clases en tu dictado:',
+                      style: theme.textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 8),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: List.generate(_drafts.length, (index) {
+                          final selected = index == _activeDraftIndex;
+                          final draftTitle = _drafts[index].title;
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: FilterChip(
+                              label: Text(
+                                '${index + 1}. ${draftTitle.isEmpty ? "Clase ${index + 1}" : draftTitle}',
+                              ),
+                              selected: selected,
+                              onSelected: (val) {
+                                setState(() {
+                                  _activeDraftIndex = index;
+                                  _syncControllers();
+                                });
+                              },
+                            ),
+                          );
+                        }),
+                      ),
+                    ),
+                  ],
+
+                  // Conflict warning badge if overlap with user schedule
+                  if (_draft.hasConflict && _draft.conflictMessage != null) ...[
+                    const SizedBox(height: 14),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.errorContainer,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.warning_amber_rounded,
+                            color: theme.colorScheme.onErrorContainer,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _draft.conflictMessage!,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onErrorContainer,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  // Project auto-linked badge
+                  if (_draft.linkedProjectId != null) ...[
+                    const SizedBox(height: 10),
+                    Chip(
+                      avatar: const Icon(Icons.folder_special, size: 16),
+                      label: const Text('Vinculado a proyecto existente'),
+                      backgroundColor:
+                          theme.colorScheme.primaryContainer.withValues(alpha: 0.5),
+                    ),
+                  ],
+
+                  const SizedBox(height: 18),
+                  TextField(
+                    controller: _titleController,
+                    enabled: !_isSaving,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(
+                      labelText: 'Clase o curso',
+                      hintText: 'Ej. Física II',
+                      prefixIcon: Icon(Icons.school_rounded),
+                    ),
+                    onChanged: (value) {
+                      _draft = _draft.copyWith(title: value);
+                      setState(() {});
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _locationController,
+                    enabled: !_isSaving,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(
+                      labelText: 'Aula o ubicación',
+                      hintText: 'Ej. Aula B203 o Zoom',
+                      prefixIcon: Icon(Icons.location_on_outlined),
+                    ),
+                    onChanged: (value) {
+                      _draft = _draft.copyWith(location: value);
+                      setState(() {});
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Quick chips bar
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        ActionChip(
+                          avatar: const Icon(Icons.more_time, size: 16),
+                          label: const Text('+1 Hora'),
+                          onPressed: _isSaving
+                              ? null
+                              : () {
+                                  final newEnd =
+                                      _draft.firstEnd.add(const Duration(hours: 1));
+                                  setState(() {
+                                    _draft = _draft.copyWith(firstEnd: newEnd);
+                                  });
+                                },
+                        ),
+                        const SizedBox(width: 8),
+                        ActionChip(
+                          avatar: const Icon(Icons.date_range, size: 16),
+                          label: const Text('Semestre (16 sem)'),
+                          onPressed: _isSaving
+                              ? null
+                              : () {
+                                  final endDate = _draft.firstStart
+                                      .add(const Duration(days: 112));
+                                  setState(() {
+                                    _draft = _draft.copyWith(
+                                      recurrenceEndDate: endDate,
+                                    );
+                                  });
+                                },
+                        ),
+                        const SizedBox(width: 8),
+                        ActionChip(
+                          avatar: const Icon(Icons.videocam, size: 16),
+                          label: const Text('Por Zoom'),
+                          onPressed: _isSaving
+                              ? null
+                              : () {
+                                  _locationController.text = 'Por Zoom';
+                                  setState(() {
+                                    _draft = _draft.copyWith(location: 'Por Zoom');
+                                  });
+                                },
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  IconButton.filledTonal(
-                    tooltip: _isListening
-                        ? 'Detener dictado'
-                        : 'Iniciar dictado',
-                    onPressed: _isSaving ? null : _toggleListening,
-                    icon: Icon(
-                      _isListening ? Icons.stop_rounded : Icons.mic_rounded,
-                    ),
+
+                  const SizedBox(height: 16),
+                  Text('Días de clase', style: theme.textTheme.titleSmall),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 8,
+                    children: List.generate(7, (index) {
+                      const labels = ['L', 'M', 'Mi', 'J', 'V', 'S', 'D'];
+                      final weekday = index + 1;
+                      final selected = _draft.weekDays.contains(weekday);
+                      return ChoiceChip(
+                        label: Text(labels[index]),
+                        selected: selected,
+                        onSelected: _isSaving
+                            ? null
+                            : (_) => _toggleWeekDay(weekday),
+                      );
+                    }),
                   ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    tooltip: 'Cerrar',
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close_rounded),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              UniCard(
-                radius: 26,
-                padding: const EdgeInsets.all(18),
-                color: theme.colorScheme.surfaceContainerLow,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        final chip = _ScheduleStatusChip(
-                          label: _isListening ? 'Escuchando' : 'Vista previa',
-                          icon: _isListening
-                              ? Icons.graphic_eq
-                              : Icons.auto_awesome_rounded,
-                          tone: _isListening
-                              ? theme.colorScheme.primaryContainer
-                              : theme.colorScheme.surfaceContainerHighest,
-                          foregroundColor: _isListening
-                              ? theme.colorScheme.primary
-                              : theme.colorScheme.onSurface,
-                        );
-                        if (constraints.maxWidth < 260) {
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              chip,
-                              const SizedBox(height: 10),
-                              Text(
-                                _statusText,
-                                maxLines: 3,
+                  const SizedBox(height: 16),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final stack = constraints.maxWidth < 400;
+                      final firstDateButton = OutlinedButton(
+                        onPressed: _isSaving ? null : _pickFirstDate,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.event_outlined, size: 18),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                DateFormat('EEE d MMM', 'es').format(_draft.firstStart),
                                 overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.bodySmall,
                               ),
+                            ),
+                          ],
+                        ),
+                      );
+                      final recurrenceButton = OutlinedButton(
+                        onPressed: _isSaving ? null : _pickRecurrenceEndDate,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _draft.recurrenceEndDate == null
+                                  ? Icons.repeat_rounded
+                                  : Icons.event_repeat_rounded,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                _draft.isSingleEvent
+                                    ? 'Evento único'
+                                    : _draft.recurrenceEndDate == null
+                                        ? 'Sin fecha límite'
+                                        : DateFormat(
+                                            'Hasta d MMM',
+                                            'es',
+                                          ).format(_draft.recurrenceEndDate!),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+
+                      if (stack) {
+                        return Column(
+                          children: [
+                            SizedBox(
+                              width: double.infinity,
+                              child: firstDateButton,
+                            ),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: recurrenceButton,
+                            ),
+                          ],
+                        );
+                      }
+
+                      return Row(
+                        children: [
+                          Expanded(child: firstDateButton),
+                          const SizedBox(width: 12),
+                          Expanded(child: recurrenceButton),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final stack = constraints.maxWidth < 400;
+                      final startButton = OutlinedButton(
+                        onPressed: _isSaving ? null : _pickStartTime,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.schedule_rounded, size: 18),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                DateFormat('hh:mm a', 'es').format(_draft.firstStart),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                      final endButton = OutlinedButton(
+                        onPressed: _isSaving ? null : _pickEndTime,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.timer_outlined, size: 18),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                DateFormat('hh:mm a', 'es').format(_draft.firstEnd),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+
+                      if (stack) {
+                        return Column(
+                          children: [
+                            SizedBox(width: double.infinity, child: startButton),
+                            const SizedBox(height: 12),
+                            SizedBox(width: double.infinity, child: endButton),
+                          ],
+                        );
+                      }
+
+                      return Row(
+                        children: [
+                          Expanded(child: startButton),
+                          const SizedBox(width: 12),
+                          Expanded(child: endButton),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  _RecurrenceSummary(draft: _draft),
+                  if (_draft.notes.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    ..._draft.notes.map(
+                      (note) => Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: _ScheduleInlineNote(note: note),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 22),
+
+                  // Actions row: Save current vs Save all
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final stack = constraints.maxWidth < 400;
+                      final saveButton = IgnorePointer(
+                        ignoring: !_draft.canSave || _isSaving,
+                        child: Opacity(
+                          opacity: _draft.canSave && !_isSaving ? 1.0 : 0.5,
+                          child: UniPrimaryButton(
+                            label: _isSaving
+                                ? 'Guardando...'
+                                : _drafts.length > 1
+                                    ? 'Guardar esta clase'
+                                    : 'Guardar horario',
+                            icon: Icons.check_circle_rounded,
+                            onPressed: _saveSchedule,
+                          ),
+                        ),
+                      );
+
+                      if (_drafts.length > 1) {
+                        final saveAllButton = OutlinedButton(
+                          onPressed: _isSaving ? null : _saveAllSchedules,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.done_all_rounded, size: 18),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  'Guardar las ${_drafts.length} clases',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+
+                        if (stack) {
+                          return Column(
+                            children: [
+                              SizedBox(
+                                width: double.infinity,
+                                child: saveAllButton,
+                              ),
+                              const SizedBox(height: 12),
+                              SizedBox(width: double.infinity, child: saveButton),
                             ],
                           );
                         }
                         return Row(
                           children: [
-                            chip,
+                            Expanded(child: saveAllButton),
                             const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                _statusText,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.bodySmall,
-                              ),
-                            ),
+                            Expanded(child: saveButton),
                           ],
                         );
-                      },
-                    ),
-                    const SizedBox(height: 14),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(999),
-                      child: LinearProgressIndicator(
-                        value: _isListening ? level : 0,
-                        minHeight: 8,
-                        color: theme.colorScheme.primary,
-                        backgroundColor:
-                            theme.colorScheme.surfaceContainerHighest,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surface,
-                        borderRadius: BorderRadius.circular(22),
-                        border: Border.all(
-                          color: theme.colorScheme.outlineVariant,
-                        ),
-                      ),
-                      child: Text(
-                        _draft.hasTranscript
-                            ? _draft.transcript
-                            : 'Todavía no hay audio procesado. Habla de forma natural y en una sola frase para que la serie quede bien armada.',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: _draft.hasTranscript
-                              ? theme.colorScheme.onSurface
-                              : theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                    if (_captureError != null) ...[
-                      const SizedBox(height: 12),
-                      Text(
-                        _captureError!,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.error,
-                        ),
-                      ),
-                    ],
-                    if (_isEnhancingWithAi || _aiStatusText != null) ...[
-                      const SizedBox(height: 12),
-                      _ScheduleAssistBanner(
-                        icon: _isEnhancingWithAi
-                            ? Icons.auto_awesome_rounded
-                            : aiEnabled
-                            ? Icons.cloud_done_outlined
-                            : Icons.info_outline_rounded,
-                        text:
-                            _aiStatusText ??
-                            'Se mantendrá la interpretación local.',
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(height: 18),
-              TextField(
-                controller: _titleController,
-                enabled: !_isSaving,
-                textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(
-                  labelText: 'Clase o curso',
-                  hintText: 'Ej. Física II',
-                  prefixIcon: Icon(Icons.school_rounded),
-                ),
-                onChanged: (value) {
-                  _draft = _draft.copyWith(title: value);
-                  setState(() {});
-                },
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _locationController,
-                enabled: !_isSaving,
-                textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(
-                  labelText: 'Aula o ubicación',
-                  hintText: 'Ej. Aula B203',
-                  prefixIcon: Icon(Icons.location_on_outlined),
-                ),
-                onChanged: (value) {
-                  _draft = _draft.copyWith(location: value);
-                  setState(() {});
-                },
-              ),
-              const SizedBox(height: 16),
-              Text('Días de clase', style: theme.textTheme.titleSmall),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 10,
-                runSpacing: 8,
-                children: List.generate(7, (index) {
-                  const labels = ['L', 'M', 'Mi', 'J', 'V', 'S', 'D'];
-                  final weekday = index + 1;
-                  final selected = _draft.weekDays.contains(weekday);
-                  return ChoiceChip(
-                    label: Text(labels[index]),
-                    selected: selected,
-                    onSelected: _isSaving
-                        ? null
-                        : (_) => _toggleWeekDay(weekday),
-                  );
-                }),
-              ),
-              const SizedBox(height: 16),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final stack = constraints.maxWidth < 360;
-                  final firstDateButton = OutlinedButton.icon(
-                    onPressed: _isSaving ? null : _pickFirstDate,
-                    icon: const Icon(Icons.event_outlined, size: 18),
-                    label: Text(
-                      DateFormat('EEE d MMM', 'es').format(_draft.firstStart),
-                    ),
-                  );
-                  final recurrenceButton = OutlinedButton.icon(
-                    onPressed: _isSaving ? null : _pickRecurrenceEndDate,
-                    icon: Icon(
-                      _draft.recurrenceEndDate == null
-                          ? Icons.repeat_rounded
-                          : Icons.event_repeat_rounded,
-                      size: 18,
-                    ),
-                    label: Text(
-                      _draft.recurrenceEndDate == null
-                          ? 'Sin fecha límite'
-                          : DateFormat(
-                              'Hasta d MMM',
-                              'es',
-                            ).format(_draft.recurrenceEndDate!),
-                    ),
-                  );
+                      }
 
-                  if (stack) {
-                    return Column(
-                      children: [
-                        SizedBox(
-                          width: double.infinity,
-                          child: firstDateButton,
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: recurrenceButton,
-                        ),
-                      ],
-                    );
-                  }
-
-                  return Row(
-                    children: [
-                      Expanded(child: firstDateButton),
-                      const SizedBox(width: 12),
-                      Expanded(child: recurrenceButton),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 16),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final stack = constraints.maxWidth < 360;
-                  final startButton = OutlinedButton.icon(
-                    onPressed: _isSaving ? null : _pickStartTime,
-                    icon: const Icon(Icons.schedule_rounded, size: 18),
-                    label: Text(
-                      DateFormat('hh:mm a', 'es').format(_draft.firstStart),
-                    ),
-                  );
-                  final endButton = OutlinedButton.icon(
-                    onPressed: _isSaving ? null : _pickEndTime,
-                    icon: const Icon(Icons.timer_outlined, size: 18),
-                    label: Text(
-                      DateFormat('hh:mm a', 'es').format(_draft.firstEnd),
-                    ),
-                  );
-
-                  if (stack) {
-                    return Column(
-                      children: [
-                        SizedBox(width: double.infinity, child: startButton),
-                        const SizedBox(height: 12),
-                        SizedBox(width: double.infinity, child: endButton),
-                      ],
-                    );
-                  }
-
-                  return Row(
-                    children: [
-                      Expanded(child: startButton),
-                      const SizedBox(width: 12),
-                      Expanded(child: endButton),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 16),
-              _RecurrenceSummary(draft: _draft),
-              if (_draft.notes.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                ..._draft.notes.map(
-                  (note) => Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: _ScheduleInlineNote(note: note),
+                      return SizedBox(
+                        width: double.infinity,
+                        child: saveButton,
+                      );
+                    },
                   ),
-                ),
-              ],
-              const SizedBox(height: 22),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final stack = constraints.maxWidth < 360;
-                  final saveButton = IgnorePointer(
-                    ignoring: !_draft.canSave || _isSaving,
-                    child: Opacity(
-                      opacity: _draft.canSave && !_isSaving ? 1 : 0.55,
-                      child: UniPrimaryButton(
-                        label: _isSaving ? 'Guardando...' : 'Guardar horario',
-                        icon: Icons.check_circle_outline_rounded,
-                        onPressed: _saveSchedule,
-                      ),
-                    ),
-                  );
-                  final listenButton = OutlinedButton.icon(
-                    onPressed: _isSaving ? null : _toggleListening,
-                    icon: Icon(
-                      _isListening ? Icons.stop_rounded : Icons.mic_rounded,
-                    ),
-                    label: Text(_isListening ? 'Detener' : 'Volver a dictar'),
-                  );
-
-                  if (stack) {
-                    return Column(
-                      children: [
-                        SizedBox(width: double.infinity, child: saveButton),
-                        const SizedBox(height: 12),
-                        SizedBox(width: double.infinity, child: listenButton),
-                      ],
-                    );
-                  }
-
-                  return Row(
-                    children: [
-                      Expanded(child: saveButton),
-                      const SizedBox(width: 12),
-                      Expanded(child: listenButton),
-                    ],
-                  );
-                },
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
-    )));
+    );
   }
 
   Future<void> _toggleListening() async {
@@ -470,8 +683,9 @@ class _VoiceScheduleSheetState extends State<VoiceScheduleSheet> {
       if (!mounted) return;
       setState(() {
         _isListening = false;
+        _soundLevel = 0;
         _statusText = _draft.hasTranscript
-            ? 'Dictado detenido. Revisa la serie y guarda.'
+            ? 'Dictado detenido. Revisa las clases y guarda.'
             : 'No se capturó suficiente audio. Puedes intentarlo otra vez.';
       });
       return;
@@ -481,41 +695,39 @@ class _VoiceScheduleSheetState extends State<VoiceScheduleSheet> {
       _captureError = null;
       _statusText = 'Preparando micrófono...';
       _soundLevel = 0;
-      _aiStatusText = null;
-      _lastAiTranscript = null;
-      _isEnhancingWithAi = false;
     });
+
+    final appState = AppStateProvider.of(context);
 
     final result = await widget.captureService.startListening(
       onTranscript: (transcript, isFinal) {
         if (!mounted) return;
-        final appState = AppStateProvider.of(context);
-        final aiEnabled =
-            appState.voiceAiEnabled && appState.voiceAiEndpointUrl.isNotEmpty;
-        final parsed = widget.parser.parse(
+        final batch = widget.parser.parseBatch(
           transcript,
           referenceTime: _referenceDate,
+          existingProjects: appState.activeProjects,
+          existingBlocks: appState.scheduleBlocks,
         );
         setState(() {
-          _draft = parsed;
-          _titleController.value = TextEditingValue(
-            text: parsed.title,
-            selection: TextSelection.collapsed(offset: parsed.title.length),
-          );
-          _locationController.value = TextEditingValue(
-            text: parsed.location,
-            selection: TextSelection.collapsed(offset: parsed.location.length),
-          );
+          _drafts = batch.isNotEmpty
+              ? batch
+              : [
+                  widget.parser.parse(
+                    transcript,
+                    referenceTime: _referenceDate,
+                    existingProjects: appState.activeProjects,
+                    existingBlocks: appState.scheduleBlocks,
+                  ),
+                ];
+          if (_activeDraftIndex >= _drafts.length) {
+            _activeDraftIndex = 0;
+          }
+          _syncControllers();
           _captureError = null;
           _statusText = isFinal
-              ? aiEnabled
-                    ? 'Serie lista. Intentando afinarla con IA segura.'
-                    : 'Serie lista. Revisa la vista previa antes de guardar.'
-              : 'Estoy preparando tu horario...';
+              ? 'Horario listo. Revisa la vista previa antes de guardar.'
+              : 'Estoy procesando tu voz...';
         });
-        if (isFinal) {
-          _enhanceScheduleWithAi(appState: appState, transcript: transcript);
-        }
       },
       onSoundLevelChange: (level) {
         if (!mounted) return;
@@ -527,7 +739,7 @@ class _VoiceScheduleSheetState extends State<VoiceScheduleSheet> {
           _isListening = status == 'listening';
           if (status == 'done' || status == 'notListening') {
             _statusText = _draft.hasTranscript
-                ? 'Serie lista. Revisa la vista previa antes de guardar.'
+                ? 'Dictado listo. Revisa la vista previa antes de guardar.'
                 : 'El dictado terminó sin suficiente contenido.';
           }
         });
@@ -557,64 +769,6 @@ class _VoiceScheduleSheetState extends State<VoiceScheduleSheet> {
       _isListening = true;
       _statusText = 'Escuchando tu horario...';
       _captureError = null;
-    });
-  }
-
-  Future<void> _enhanceScheduleWithAi({
-    required AppState appState,
-    required String transcript,
-  }) async {
-    final normalizedTranscript = transcript.trim();
-    if (!appState.voiceAiEnabled ||
-        appState.voiceAiEndpointUrl.isEmpty ||
-        normalizedTranscript.isEmpty ||
-        _lastAiTranscript == normalizedTranscript) {
-      return;
-    }
-
-    setState(() {
-      _lastAiTranscript = normalizedTranscript;
-      _isEnhancingWithAi = true;
-      _aiStatusText = 'Afinando el horario con tu endpoint IA seguro...';
-    });
-
-    final outcome = await widget.aiParseService.enhanceSchedule(
-      transcript: normalizedTranscript,
-      referenceTime: _referenceDate,
-      endpointUrl: appState.voiceAiEndpointUrl,
-      proxyToken: appState.voiceAiProxyToken,
-    );
-
-    if (!mounted || _lastAiTranscript != normalizedTranscript) {
-      return;
-    }
-
-    if (!outcome.hasDraft) {
-      setState(() {
-        _isEnhancingWithAi = false;
-        _aiStatusText =
-            outcome.warning ??
-            'No pude mejorar el dictado. Se mantuvo la interpretación local.';
-      });
-      return;
-    }
-
-    final enhancedDraft = outcome.draft!;
-    setState(() {
-      _draft = enhancedDraft;
-      _titleController.value = TextEditingValue(
-        text: enhancedDraft.title,
-        selection: TextSelection.collapsed(offset: enhancedDraft.title.length),
-      );
-      _locationController.value = TextEditingValue(
-        text: enhancedDraft.location,
-        selection: TextSelection.collapsed(
-          offset: enhancedDraft.location.length,
-        ),
-      );
-      _isEnhancingWithAi = false;
-      _aiStatusText =
-          'El horario se refinó con IA y quedó listo para revisar antes de guardar.';
     });
   }
 
@@ -767,9 +921,9 @@ class _VoiceScheduleSheetState extends State<VoiceScheduleSheet> {
     final weekDays = [..._draft.weekDays]..sort();
     final anchorStart = _realignStart(weekDays, _draft.firstStart);
     final duration = _draft.firstEnd.difference(_draft.firstStart);
-    final recurrence = weekDays.length > 1
-        ? RecurrenceType.custom
-        : RecurrenceType.weekly;
+    final recurrence = _draft.isSingleEvent
+        ? RecurrenceType.none
+        : (weekDays.length > 1 ? RecurrenceType.custom : RecurrenceType.weekly);
 
     appState.addScheduleBlock(
       title: title,
@@ -801,6 +955,96 @@ class _VoiceScheduleSheetState extends State<VoiceScheduleSheet> {
       ),
     );
   }
+
+  Future<void> _saveAllSchedules() async {
+    if (_isSaving) return;
+
+    setState(() {
+      _isSaving = true;
+      _captureError = null;
+    });
+
+    final appState = AppStateProvider.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
+    var count = 0;
+    for (final draft in _drafts) {
+      if (!draft.canSave) continue;
+      final weekDays = [...draft.weekDays]..sort();
+      final anchorStart = _realignStart(weekDays, draft.firstStart);
+      final duration = draft.firstEnd.difference(draft.firstStart);
+      final recurrence = draft.isSingleEvent
+          ? RecurrenceType.none
+          : (weekDays.length > 1 ? RecurrenceType.custom : RecurrenceType.weekly);
+
+      appState.addScheduleBlock(
+        title: draft.title,
+        start: anchorStart,
+        end: anchorStart.add(duration),
+        color: const Color(0xFF85D1F7),
+        location: draft.location,
+        category: ScheduleCategory.classSession,
+        recurrence: recurrence,
+        recurrenceEndDate: draft.recurrenceEndDate,
+        recurrenceGroupId: weekDays.length > 1
+            ? 'voice-series-${DateTime.now().millisecondsSinceEpoch}'
+            : null,
+        customWeekDays: weekDays.length > 1 ? weekDays : null,
+      );
+      count++;
+    }
+
+    await widget.captureService.stopListening();
+
+    if (!mounted) return;
+    navigator.pop();
+    messenger.showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 4),
+        content: Text('$count clases agregadas a tu horario exitosamente.'),
+        action: SnackBarAction(label: 'Cerrar', onPressed: () {}),
+      ),
+    );
+  }
+}
+
+class _VoiceSoundWaveVisualizer extends StatelessWidget {
+  final double soundLevel;
+  final bool isListening;
+
+  const _VoiceSoundWaveVisualizer({
+    required this.soundLevel,
+    required this.isListening,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SizedBox(
+      height: 24,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: List.generate(7, (index) {
+          final factor = (index % 2 == 0 ? 0.6 : 1.0) * (isListening ? (soundLevel + 0.2) : 0.15);
+          final barHeight = (24 * factor.clamp(0.15, 1.0)).toDouble();
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 100),
+            margin: const EdgeInsets.symmetric(horizontal: 3),
+            width: 4,
+            height: barHeight,
+            decoration: BoxDecoration(
+              color: isListening
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.outlineVariant,
+              borderRadius: BorderRadius.circular(999),
+            ),
+          );
+        }),
+      ),
+    );
+  }
 }
 
 class _RecurrenceSummary extends StatelessWidget {
@@ -812,9 +1056,11 @@ class _RecurrenceSummary extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final dayLabels = draft.weekDays.map(_weekdayLabel).join(', ');
-    final endLabel = draft.recurrenceEndDate == null
-        ? 'Sin fecha límite'
-        : 'Hasta ${DateFormat('d MMM y', 'es').format(draft.recurrenceEndDate!)}';
+    final endLabel = draft.isSingleEvent
+        ? 'Evento único'
+        : (draft.recurrenceEndDate == null
+            ? 'Sin fecha límite'
+            : 'Hasta ${DateFormat('d MMM y', 'es').format(draft.recurrenceEndDate!)}');
 
     return Container(
       width: double.infinity,
@@ -827,15 +1073,72 @@ class _RecurrenceSummary extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Serie semanal', style: theme.textTheme.titleSmall),
+          Text(
+            draft.isSingleEvent ? 'Evento individual' : 'Serie semanal',
+            style: theme.textTheme.titleSmall,
+          ),
           const SizedBox(height: 6),
           Text(
-            'Se repetirá ${draft.weekDays.length > 1 ? 'los ' : 'el '} $dayLabels.',
+            draft.isSingleEvent
+                ? 'Se registrará solo para este día.'
+                : 'Se repetirá ${draft.weekDays.length > 1 ? 'los ' : 'el '} $dayLabels.',
             style: theme.textTheme.bodyMedium,
           ),
           const SizedBox(height: 4),
           Text(endLabel, style: theme.textTheme.bodySmall),
         ],
+      ),
+    );
+  }
+
+  String _weekdayLabel(int weekday) {
+    switch (weekday) {
+      case DateTime.monday:
+        return 'lunes';
+      case DateTime.tuesday:
+        return 'martes';
+      case DateTime.wednesday:
+        return 'miércoles';
+      case DateTime.thursday:
+        return 'jueves';
+      case DateTime.friday:
+        return 'viernes';
+      case DateTime.saturday:
+        return 'sábado';
+      case DateTime.sunday:
+        return 'domingo';
+      default:
+        return '';
+    }
+  }
+}
+
+class _ScheduleInlineNote extends StatelessWidget {
+  final String note;
+
+  const _ScheduleInlineNote({required this.note});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isWarning = note.contains('⚠️');
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: isWarning
+            ? theme.colorScheme.errorContainer.withValues(alpha: 0.7)
+            : theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Text(
+        note,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: isWarning
+              ? theme.colorScheme.onErrorContainer
+              : theme.colorScheme.onSurfaceVariant,
+        ),
       ),
     );
   }
@@ -857,7 +1160,7 @@ class _ScheduleStatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: tone,
         borderRadius: BorderRadius.circular(999),
@@ -867,104 +1170,19 @@ class _ScheduleStatusChip extends StatelessWidget {
         children: [
           Icon(icon, size: 16, color: foregroundColor),
           const SizedBox(width: 6),
-          Text(
-            label,
-            style: Theme.of(
-              context,
-            ).textTheme.labelMedium?.copyWith(color: foregroundColor),
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: foregroundColor,
+              ),
+            ),
           ),
         ],
       ),
     );
   }
-}
-
-class _ScheduleInlineNote extends StatelessWidget {
-  final String note;
-
-  const _ScheduleInlineNote({required this.note});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 2),
-          child: Icon(
-            Icons.info_outline_rounded,
-            size: 16,
-            color: theme.colorScheme.primary,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(child: Text(note, style: theme.textTheme.bodySmall)),
-      ],
-    );
-  }
-}
-
-class _ScheduleAssistBanner extends StatelessWidget {
-  const _ScheduleAssistBanner({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 1),
-            child: Icon(icon, size: 16, color: theme.colorScheme.primary),
-          ),
-          const SizedBox(width: 8),
-          Expanded(child: Text(text, style: theme.textTheme.bodySmall)),
-        ],
-      ),
-    );
-  }
-}
-
-String _weekdayLabel(int weekDay) {
-  switch (weekDay) {
-    case DateTime.monday:
-      return 'lunes';
-    case DateTime.tuesday:
-      return 'martes';
-    case DateTime.wednesday:
-      return 'miércoles';
-    case DateTime.thursday:
-      return 'jueves';
-    case DateTime.friday:
-      return 'viernes';
-    case DateTime.saturday:
-      return 'sábado';
-    case DateTime.sunday:
-      return 'domingo';
-    default:
-      return 'día';
-  }
-}
-
-Future<void> showVoiceScheduleSheet(
-  BuildContext context, {
-  DateTime? referenceDay,
-}) {
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (_) => VoiceScheduleSheet(referenceDay: referenceDay),
-  );
 }

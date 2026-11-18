@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/alarm_sounds.dart';
 import '../../models/alarm_schedule.dart';
 import '../../state/app_state.dart';
 
@@ -108,6 +109,17 @@ Future<void> showAlarmSheet(BuildContext context, {AlarmSchedule? alarm}) {
   var snoozeMinutes = alarm?.snoozeMinutes ?? 10;
   var maxSnoozes = alarm?.maxSnoozes ?? 3;
   var vibrate = alarm?.vibrate ?? true;
+  var soundLabel = AlarmSounds.defaultLabel;
+  if (alarm?.soundAssetPath != null) {
+    for (final option in AlarmSounds.options) {
+      if (option.assetPath == alarm!.soundAssetPath) {
+        soundLabel = option.label;
+        break;
+      }
+    }
+  } else if (!isEditing) {
+    soundLabel = appState.alarmSound;
+  }
 
   return showModalBottomSheet<void>(
     context: context,
@@ -254,6 +266,23 @@ Future<void> showAlarmSheet(BuildContext context, {AlarmSchedule? alarm}) {
                     title: const Text('Vibración'),
                     onChanged: (value) => setState(() => vibrate = value),
                   ),
+                  DropdownButtonFormField<String>(
+                    initialValue: soundLabel,
+                    decoration: const InputDecoration(
+                      labelText: 'Sonido',
+                      prefixIcon: Icon(Icons.music_note_rounded),
+                    ),
+                    items: AlarmSounds.options
+                        .map(
+                          (option) => DropdownMenuItem(
+                            value: option.label,
+                            child: Text(option.label),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) =>
+                        setState(() => soundLabel = value ?? soundLabel),
+                  ),
                   Row(
                     children: [
                       Expanded(
@@ -321,6 +350,8 @@ Future<void> showAlarmSheet(BuildContext context, {AlarmSchedule? alarm}) {
                                 snoozeMinutes: snoozeMinutes,
                                 maxSnoozes: maxSnoozes,
                                 vibrate: vibrate,
+                                soundAssetPath:
+                                    AlarmSounds.byLabel(soundLabel).assetPath,
                               );
                             } else {
                               await appState.updateAlarm(
@@ -335,6 +366,8 @@ Future<void> showAlarmSheet(BuildContext context, {AlarmSchedule? alarm}) {
                                   snoozeMinutes: snoozeMinutes,
                                   maxSnoozes: maxSnoozes,
                                   vibrate: vibrate,
+                                  soundAssetPath: () =>
+                                      AlarmSounds.byLabel(soundLabel).assetPath,
                                 ),
                               );
                             }

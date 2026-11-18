@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/design_tokens.dart';
 
 /// Reusable empty state widget
 class EmptyStateWidget extends StatelessWidget {
@@ -49,7 +50,9 @@ class EmptyStateWidget extends StatelessWidget {
                       width: circleSize,
                       height: circleSize,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF9FCFBB).withValues(alpha: 0.1),
+                        color: DesignTokens.adaptiveMint(
+                          context,
+                        ).withValues(alpha: 0.1),
                         shape: BoxShape.circle,
                       ),
                       child: Center(
@@ -95,7 +98,7 @@ class EmptyStateWidget extends StatelessWidget {
                         ),
                       ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF9FCFBB),
+                        backgroundColor: DesignTokens.adaptiveMint(context),
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(
                           horizontal: 32,
@@ -105,8 +108,8 @@ class EmptyStateWidget extends StatelessWidget {
                           borderRadius: BorderRadius.circular(16),
                         ),
                         elevation: 4,
-                        shadowColor: const Color(
-                          0xFF9FCFBB,
+                        shadowColor: DesignTokens.adaptiveMint(
+                          context,
                         ).withValues(alpha: 0.4),
                       ),
                     ),

@@ -5,25 +5,22 @@ import 'package:intl/intl.dart';
 import '../core/design_tokens.dart';
 import '../models/project.dart';
 import '../models/voice_task_draft.dart';
-import '../services/voice_ai_parse_service.dart';
 import '../services/voice_task_capture_service.dart';
 import '../services/voice_task_parser.dart';
 import '../state/app_state.dart';
 import 'uni_card.dart';
 import 'uni_primary_button.dart';
 
+/// Sheet de dictado 100% local — parser en español sin red ni proxy externo.
 class VoiceTaskSheet extends StatefulWidget {
-  final VoiceAiParseService aiParseService;
   final VoiceTaskCaptureService captureService;
   final VoiceTaskParser parser;
 
   VoiceTaskSheet({
     super.key,
-    VoiceAiParseService? aiParseService,
     VoiceTaskCaptureService? captureService,
     VoiceTaskParser? parser,
-  }) : aiParseService = aiParseService ?? VoiceAiParseService.instance,
-       captureService = captureService ?? VoiceTaskCaptureService.instance,
+  }) : captureService = captureService ?? VoiceTaskCaptureService.instance,
        parser = parser ?? const VoiceTaskParser();
 
   @override
@@ -43,11 +40,8 @@ class _VoiceTaskSheetState extends State<VoiceTaskSheet> {
   String? _captureError;
   bool _isListening = false;
   bool _isSaving = false;
-  bool _isEnhancingWithAi = false;
   double _soundLevel = 0;
   bool _projectSelectionLocked = false;
-  String? _aiStatusText;
-  String? _lastAiTranscript;
 
   @override
   void initState() {
@@ -72,8 +66,6 @@ class _VoiceTaskSheetState extends State<VoiceTaskSheet> {
     final canCreateProject =
         matchedProject == null &&
         (_draft.projectHint?.trim().isNotEmpty ?? false);
-    final aiEnabled =
-        appState.voiceAiEnabled && appState.voiceAiEndpointUrl.isNotEmpty;
 
     if (!_projectSelectionLocked) {
       _selectedProjectValue = _initialProjectValue(
@@ -251,19 +243,6 @@ class _VoiceTaskSheetState extends State<VoiceTaskSheet> {
                         ),
                       ),
                     ],
-                    if (_isEnhancingWithAi || _aiStatusText != null) ...[
-                      const SizedBox(height: 12),
-                      _VoiceAssistBanner(
-                        icon: _isEnhancingWithAi
-                            ? Icons.auto_awesome_rounded
-                            : aiEnabled
-                            ? Icons.cloud_done_outlined
-                            : Icons.info_outline_rounded,
-                        text:
-                            _aiStatusText ??
-                            'Se mantendrá la interpretación local.',
-                      ),
-                    ],
                   ],
                 ),
               ),
@@ -368,7 +347,7 @@ class _VoiceTaskSheetState extends State<VoiceTaskSheet> {
               const SizedBox(height: 22),
               LayoutBuilder(
                 builder: (context, constraints) {
-                  final stack = constraints.maxWidth < 360;
+                  final stack = constraints.maxWidth < 460;
                   final saveButton = IgnorePointer(
                     ignoring: !_canSave,
                     child: Opacity(
@@ -510,17 +489,12 @@ class _VoiceTaskSheetState extends State<VoiceTaskSheet> {
       _captureError = null;
       _statusText = 'Preparando micrófono...';
       _soundLevel = 0;
-      _aiStatusText = null;
-      _lastAiTranscript = null;
-      _isEnhancingWithAi = false;
     });
 
     final result = await widget.captureService.startListening(
       onTranscript: (transcript, isFinal) {
         if (!mounted) return;
         final appState = AppStateProvider.of(context);
-        final aiEnabled =
-            appState.voiceAiEnabled && appState.voiceAiEndpointUrl.isNotEmpty;
         final parsed = widget.parser.parse(
           transcript,
           projects: appState.activeProjects,
@@ -533,19 +507,10 @@ class _VoiceTaskSheetState extends State<VoiceTaskSheet> {
           );
           _captureError = null;
           _statusText = isFinal
-              ? aiEnabled
-                    ? 'Dictado listo. Intentando afinarlo con IA segura.'
-                    : 'Dictado listo. Revisa la vista previa antes de guardar.'
+              ? 'Dictado listo. Revisa la vista previa antes de guardar.'
               : 'Estoy escuchando y preparando la tarea...';
           _projectSelectionLocked = false;
         });
-        if (isFinal) {
-          _enhanceTaskWithAi(
-            appState: appState,
-            transcript: transcript,
-            activeProjects: appState.activeProjects,
-          );
-        }
       },
       onSoundLevelChange: (level) {
         if (!mounted) return;
@@ -590,61 +555,6 @@ class _VoiceTaskSheetState extends State<VoiceTaskSheet> {
       _isListening = true;
       _statusText = 'Escuchando tu tarea...';
       _captureError = null;
-    });
-  }
-
-  Future<void> _enhanceTaskWithAi({
-    required AppState appState,
-    required String transcript,
-    required List<Project> activeProjects,
-  }) async {
-    final normalizedTranscript = transcript.trim();
-    if (!appState.voiceAiEnabled ||
-        appState.voiceAiEndpointUrl.isEmpty ||
-        normalizedTranscript.isEmpty ||
-        _lastAiTranscript == normalizedTranscript) {
-      return;
-    }
-
-    setState(() {
-      _lastAiTranscript = normalizedTranscript;
-      _isEnhancingWithAi = true;
-      _aiStatusText = 'Afinando la tarea con tu endpoint IA seguro...';
-    });
-
-    final outcome = await widget.aiParseService.enhanceTask(
-      transcript: normalizedTranscript,
-      referenceTime: DateTime.now(),
-      activeProjects: activeProjects,
-      endpointUrl: appState.voiceAiEndpointUrl,
-      proxyToken: appState.voiceAiProxyToken,
-    );
-
-    if (!mounted || _lastAiTranscript != normalizedTranscript) {
-      return;
-    }
-
-    if (!outcome.hasDraft) {
-      setState(() {
-        _isEnhancingWithAi = false;
-        _aiStatusText =
-            outcome.warning ??
-            'No pude mejorar el dictado. Se mantuvo la interpretación local.';
-      });
-      return;
-    }
-
-    final enhancedDraft = outcome.draft!;
-    setState(() {
-      _draft = enhancedDraft;
-      _titleController.value = TextEditingValue(
-        text: enhancedDraft.title,
-        selection: TextSelection.collapsed(offset: enhancedDraft.title.length),
-      );
-      _projectSelectionLocked = false;
-      _isEnhancingWithAi = false;
-      _aiStatusText =
-          'La tarea se refinó con IA y quedó lista para revisar antes de guardar.';
     });
   }
 
@@ -770,18 +680,25 @@ class _StatusChip extends StatelessWidget {
         color: tone,
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: foregroundColor),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: Theme.of(
-              context,
-            ).textTheme.labelMedium?.copyWith(color: foregroundColor),
-          ),
-        ],
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 180),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: foregroundColor),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(
+                  context,
+                ).textTheme.labelMedium?.copyWith(color: foregroundColor),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -809,37 +726,6 @@ class _InlineNote extends StatelessWidget {
         const SizedBox(width: 8),
         Expanded(child: Text(note, style: theme.textTheme.bodySmall)),
       ],
-    );
-  }
-}
-
-class _VoiceAssistBanner extends StatelessWidget {
-  const _VoiceAssistBanner({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 1),
-            child: Icon(icon, size: 16, color: theme.colorScheme.primary),
-          ),
-          const SizedBox(width: 8),
-          Expanded(child: Text(text, style: theme.textTheme.bodySmall)),
-        ],
-      ),
     );
   }
 }

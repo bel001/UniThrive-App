@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -67,5 +68,23 @@ class AttachmentPicker {
     final savedPath = p.join(attachmentsDir.path, name);
     await File(originalPath).copy(savedPath);
     return savedPath;
+  }
+
+  /// Borra un adjunto local si es un archivo dentro del directorio de
+  /// adjuntos de la app. Los enlaces (http/https) se ignoran.
+  static Future<void> deleteStoredFile(String? value) async {
+    if (value == null || isLink(value)) return;
+    try {
+      if (kIsWeb) return;
+      final directory = await getApplicationDocumentsDirectory();
+      final attachmentsDir = p.join(directory.path, 'attachments');
+      if (!p.isWithin(attachmentsDir, value)) return;
+      final file = File(value);
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (_) {
+      // Nunca fallar por limpieza de archivos.
+    }
   }
 }

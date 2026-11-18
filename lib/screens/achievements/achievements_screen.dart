@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/design_tokens.dart';
 import '../../models/achievement.dart';
 import '../../state/app_state.dart';
 
@@ -71,8 +72,11 @@ class AchievementsScreen extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF9FCFBB), Color(0xFFB39DFF)],
+          gradient: LinearGradient(
+            colors: [
+              DesignTokens.adaptiveMint(context),
+              DesignTokens.lilac,
+            ],
           ),
           borderRadius: BorderRadius.circular(20),
         ),
@@ -246,7 +250,8 @@ class AchievementsScreen extends StatelessWidget {
                     if (!unlocked) ...[
                       LinearProgressIndicator(
                         value: achievement.progressPercent / 100,
-                        backgroundColor: Colors.grey.shade200,
+                        backgroundColor:
+                            theme.colorScheme.surfaceContainerHighest,
                         color: rarityColor,
                       ),
                       const SizedBox(height: 4),

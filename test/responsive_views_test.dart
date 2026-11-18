@@ -93,7 +93,7 @@ void main() {
         child: const ProjectsScreen(),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Agregar'));
+      await tester.tap(find.text('Nuevo proyecto'));
       await tester.pumpAndSettle();
       _expectNoLayoutException(tester, 'Projects sheet ${viewport.label}');
       await _dismissTopRoute(tester);
@@ -169,10 +169,6 @@ void main() {
     _DialogCase(
       label: 'Settings sound dialog',
       builder: (appState) => SettingsAlarmSoundDialog(appState: appState),
-    ),
-    _DialogCase(
-      label: 'Settings voice AI dialog',
-      builder: (appState) => SettingsVoiceAiDialog(appState: appState),
     ),
     _DialogCase(
       label: 'Settings reset dialog',

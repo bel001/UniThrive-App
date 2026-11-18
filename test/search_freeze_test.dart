@@ -6,26 +6,30 @@ import 'package:uni_thrive/state/app_state.dart';
 void main() {
   testWidgets('Search button does not freeze', (WidgetTester tester) async {
     final appState = AppState();
-    await appState.initialize();
     
     await tester.pumpWidget(
       AppStateProvider(
         appState: appState,
-        child: MaterialApp(
-          home: const CalendarScreen(),
+        child: const MaterialApp(
+          home: CalendarScreen(),
         ),
       ),
     );
     
     await tester.pumpAndSettle();
     
-    final searchButton = find.byTooltip('Buscar');
-    expect(searchButton, findsWidgets);
+    final moreMenu = find.byIcon(Icons.more_vert_rounded);
+    expect(moreMenu, findsOneWidget);
     
-    await tester.tap(searchButton.first);
-    await tester.pump();
+    await tester.tap(moreMenu);
     await tester.pumpAndSettle();
     
-    expect(find.byType(TextField), findsOneWidget); // The search sheet should be up
+    final searchOption = find.text('Buscar');
+    expect(searchOption, findsOneWidget);
+
+    await tester.tap(searchOption);
+    await tester.pumpAndSettle();
+    
+    expect(find.byType(TextField), findsOneWidget);
   });
 }

@@ -327,18 +327,19 @@ class _TaskActionCard extends StatelessWidget {
     final dueLabel = task.dueDate == null
         ? 'Sin fecha'
         : '${task.dueDate!.day}/${task.dueDate!.month} · ${task.dueDate!.hour.toString().padLeft(2, '0')}:${task.dueDate!.minute.toString().padLeft(2, '0')}';
+    final isDark = theme.brightness == Brightness.dark;
     final priorityColor = switch (task.priority) {
-      TaskPriority.low => Colors.green,
-      TaskPriority.medium => Colors.blue,
-      TaskPriority.high => Colors.orange,
-      TaskPriority.urgent => Colors.red,
+      TaskPriority.low => theme.colorScheme.secondary,
+      TaskPriority.medium => theme.colorScheme.primary,
+      TaskPriority.high => isDark ? DesignTokens.warningDark : DesignTokens.warning,
+      TaskPriority.urgent => isDark ? DesignTokens.errorDark : theme.colorScheme.error,
     };
 
     return Dismissible(
       key: ValueKey(task.id),
       background: _SwipeBackground(
         alignment: Alignment.centerLeft,
-        color: task.completed ? Colors.orange : Colors.green,
+        color: task.completed ? theme.colorScheme.tertiary : theme.colorScheme.secondary,
         icon: task.completed ? Icons.undo_rounded : Icons.check_rounded,
         label: task.completed ? 'Reabrir' : 'Completar',
       ),
@@ -373,13 +374,15 @@ class _TaskActionCard extends StatelessWidget {
                   onTap: () => Navigator.of(sheetContext).pop('duplicate'),
                 ),
                 ListTile(
-                  leading: const Icon(
+                  leading: Icon(
                     Icons.delete_outline_rounded,
-                    color: Colors.red,
+                    color: Theme.of(context).colorScheme.error,
                   ),
-                  title: const Text(
+                  title: Text(
                     'Eliminar',
-                    style: TextStyle(color: Colors.red),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
                   ),
                   onTap: () => Navigator.of(sheetContext).pop('delete'),
                 ),
@@ -634,8 +637,8 @@ class _TimeSummaryCard extends StatelessWidget {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            const Color(0xFF9FCFBB),
-            const Color(0xFF9FCFBB).withValues(alpha: 0.72),
+            DesignTokens.adaptiveMint(context),
+            DesignTokens.adaptiveMint(context).withValues(alpha: 0.72),
           ],
         ),
         borderRadius: BorderRadius.circular(28),

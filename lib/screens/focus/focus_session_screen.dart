@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../core/constants.dart';
 import '../../core/design_tokens.dart';
+import '../../state/app_state.dart';
 import '../../widgets/soft_page_route.dart';
 import '../../widgets/uni_card.dart';
 import '../../widgets/uni_primary_button.dart';
@@ -44,6 +44,8 @@ class _FocusSessionScreenState extends State<FocusSessionScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final focusMinutes =
+        AppStateProvider.of(context).focusDuration.inMinutes;
 
     return Scaffold(
       body: SafeArea(
@@ -85,7 +87,7 @@ class _FocusSessionScreenState extends State<FocusSessionScreen> {
                           ),
                           const SizedBox(height: 10),
                           Text(
-                            'Vamos a dedicar ${Constants.focusDuration.inMinutes} minutos a “${widget.taskLabel}”. Deja listo el contexto y arranca con intención.',
+                            'Vamos a dedicar $focusMinutes minutos a “${widget.taskLabel}”. Deja listo el contexto y arranca con intención.',
                             style: theme.textTheme.bodyMedium?.copyWith(
                               color: scheme.onPrimaryContainer.withValues(
                                 alpha: 0.78,
@@ -99,8 +101,7 @@ class _FocusSessionScreenState extends State<FocusSessionScreen> {
                             children: [
                               _InfoPill(
                                 icon: Icons.timer_outlined,
-                                label:
-                                    '${Constants.focusDuration.inMinutes} min de foco',
+                                label: '$focusMinutes min de foco',
                               ),
                               const _InfoPill(
                                 icon: Icons.flag_outlined,

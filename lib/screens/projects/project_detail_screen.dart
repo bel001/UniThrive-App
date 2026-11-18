@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 import '../../models/project.dart';
 import '../../state/app_state.dart';
 import '../../models/task.dart';
+import '../../core/design_tokens.dart';
+import '../../widgets/progress_bar.dart';
 import '../../widgets/uni_card.dart';
+import '../../widgets/uni_supervisual.dart';
 import '../../utils/attachment_picker.dart';
 import '../../widgets/uni_primary_button.dart';
 
@@ -32,9 +35,9 @@ class ProjectDetailScreen extends StatelessWidget {
             onGenerate: () => appState.generatePlanForProject(project.id),
           ),
           const SizedBox(height: 20),
-          const Text(
-            'El checklist maestro',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+          Text(
+            'Por hacer',
+            style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 12),
           if (tasks.isEmpty)
@@ -57,12 +60,11 @@ class ProjectDetailScreen extends StatelessWidget {
               physics: const NeverScrollableScrollPhysics(),
               buildDefaultDragHandles: false,
               itemCount: tasks.length,
-              onReorder: (oldIndex, newIndex) {
-                if (newIndex > oldIndex) newIndex -= 1;
+              onReorderItem: (fromIndex, toIndex) {
                 appState.moveTaskWithinProject(
                   projectId: project.id,
-                  taskId: tasks[oldIndex].id,
-                  newIndex: newIndex,
+                  taskId: tasks[fromIndex].id,
+                  newIndex: toIndex,
                 );
               },
               itemBuilder: (context, index) {
@@ -78,10 +80,12 @@ class ProjectDetailScreen extends StatelessWidget {
               },
             ),
           const SizedBox(height: 16),
-          ElevatedButton(
+          UniPrimaryButton(
+            label: 'Agregar subtarea',
+            icon: Icons.add_rounded,
             onPressed: () => _promptAddStep(context, appState),
-            child: const Text('Agregar paso'),
           ),
+          const SizedBox(height: 96),
         ],
       ),
     );
@@ -94,52 +98,105 @@ class ProjectDetailScreen extends StatelessWidget {
     required int total,
     required VoidCallback onGenerate,
   }) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final due = DateTime(
+      project.dueDate.year,
+      project.dueDate.month,
+      project.dueDate.day,
+    );
+    final days = due.difference(today).inDays;
+    final dueLabel = days < 0
+        ? 'Vencido'
+        : days == 0
+            ? 'Vence hoy'
+            : days == 1
+                ? 'Vence mañana'
+                : 'Vence en $days días';
+    final progress = (project.progress / 100).clamp(0.0, 1.0);
+
     return UniCard(
+      radius: 24,
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Progreso general',
-            style: TextStyle(fontWeight: FontWeight.w600),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest.withValues(
+                alpha: 0.7,
+              ),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.timer_outlined,
+                  size: 14,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    dueLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelMedium,
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 12),
-          LinearProgressIndicator(
-            value: (project.progress / 100).clamp(0.0, 1.0),
-            color: project.color,
-            backgroundColor: Colors.grey.shade200,
-            minHeight: 10,
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 12,
-            runSpacing: 6,
-            alignment: WrapAlignment.spaceBetween,
-            children: [
-              Text(
-                '${project.progress.toInt()}% del plan cumplido',
-                style: const TextStyle(fontSize: 14),
+          Text(project.name, style: theme.textTheme.headlineSmall),
+          if (project.description.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              project.description,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyMedium,
+            ),
+          ],
+          const SizedBox(height: 20),
+          Center(
+            child: UniRingProgress(
+              progress: progress,
+              size: 150,
+              progressColor: DesignTokens.mintStrong,
+              center: Text(
+                '${project.progress.toInt()}%',
+                style: theme.textTheme.displayMedium?.copyWith(
+                  fontSize: 32,
+                  color: isDark ? DesignTokens.mint : DesignTokens.success,
+                ),
               ),
-              Text(
-                'Entrega: ${project.dueDate.format()}',
-                style: const TextStyle(color: Color(0xFF94A3B8)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            total == 0
-                ? 'Aún no hay pasos. Genera tu plan inteligente.'
-                : '$completed de $total pasos completados. ¡Sigue así!',
-            style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
           const SizedBox(height: 12),
-          if (total == 0)
+          Center(
+            child: Text(
+              total == 0
+                  ? 'Aún no hay pasos. Genera tu plan inteligente.'
+                  : '$completed de $total pasos completados. ¡Sigue así!',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ProgressBar(value: progress, fillColor: project.color),
+          if (total == 0) ...[
+            const SizedBox(height: 16),
             UniPrimaryButton(
               expand: false,
               label: 'Generar plan',
               onPressed: onGenerate,
             ),
+          ],
         ],
       ),
     );
@@ -328,7 +385,9 @@ class ProjectDetailScreen extends StatelessWidget {
             ),
             FilledButton(
               onPressed: () => Navigator.of(dialogContext).pop(true),
-              style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error,
+              ),
               child: const Text('Eliminar'),
             ),
           ],
@@ -363,15 +422,53 @@ class _ChecklistRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      key: key,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        child: Row(
-          children: [
-            Checkbox(value: task.completed, onChanged: (_) => onChanged()),
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    return Opacity(
+      opacity: task.completed ? 0.55 : 1.0,
+      child: Card(
+        key: key,
+        color: isDark ? DesignTokens.cardDarkAlt : Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: isDark
+                ? DesignTokens.lilac.withValues(alpha: 0.20)
+                : DesignTokens.divider,
+          ),
+        ),
+        margin: const EdgeInsets.symmetric(vertical: 6),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          child: Row(
+            children: [
+              GestureDetector(
+                onTap: onChanged,
+                child: Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: task.completed
+                        ? DesignTokens.mintStrong
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(9),
+                    border: Border.all(
+                      color: task.completed
+                          ? DesignTokens.mintStrong
+                          : theme.colorScheme.outline,
+                      width: 2,
+                    ),
+                  ),
+                  child: task.completed
+                      ? const Icon(
+                          Icons.check_rounded,
+                          size: 18,
+                          color: Color(0xFF002114),
+                        )
+                      : null,
+                ),
+              ),
+              const SizedBox(width: 4),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -426,13 +523,15 @@ class _ChecklistRow extends StatelessWidget {
                   onDelete();
                 }
               },
-              itemBuilder: (context) => const [
-                PopupMenuItem(value: 'edit', child: Text('Editar')),
+              itemBuilder: (context) => [
+                const PopupMenuItem(value: 'edit', child: Text('Editar')),
                 PopupMenuItem(
                   value: 'delete',
                   child: Text(
                     'Eliminar',
-                    style: TextStyle(color: Colors.redAccent),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
                   ),
                 ),
               ],
@@ -451,11 +550,9 @@ class _ChecklistRow extends StatelessWidget {
           ],
         ),
       ),
+    ),
     );
   }
 }
 
-extension on DateTime {
-  String format() =>
-      '${day.toString().padLeft(2, '0')}/${month.toString().padLeft(2, '0')}';
-}
+

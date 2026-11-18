@@ -40,7 +40,7 @@ class TaskPathNode extends StatelessWidget {
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
         decoration: BoxDecoration(
-          color: Colors.red,
+          color: Theme.of(context).colorScheme.error,
           borderRadius: BorderRadius.circular(16),
         ),
         child: const Icon(Icons.delete, color: Colors.white),
@@ -58,9 +58,11 @@ class TaskPathNode extends StatelessWidget {
               ),
               TextButton(
                 onPressed: () => Navigator.pop(context, true),
-                child: const Text(
+                child: Text(
                   'Eliminar',
-                  style: TextStyle(color: Colors.red),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                  ),
                 ),
               ),
             ],
@@ -82,7 +84,7 @@ class TaskPathNode extends StatelessWidget {
                     width: 3,
                     height: 60,
                     color: isCompleted
-                        ? const Color(0xFF9FCFBB)
+                        ? DesignTokens.adaptiveMint(context)
                         : Colors.grey.shade300,
                   ),
               ],
@@ -101,7 +103,7 @@ class TaskPathNode extends StatelessWidget {
                     ),
                     border: Border.all(
                       color: isActive
-                          ? const Color(0xFF9FCFBB)
+                          ? DesignTokens.adaptiveMint(context)
                           : Colors.transparent,
                       width: 3,
                     ),
@@ -195,8 +197,8 @@ class TaskPathNode extends StatelessWidget {
                                 task.subtasks.length,
                             minHeight: 4,
                             backgroundColor: Colors.grey.shade200,
-                            valueColor: const AlwaysStoppedAnimation<Color>(
-                              Color(0xFF9FCFBB),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              DesignTokens.adaptiveMint(context),
                             ),
                           ),
                         ),
@@ -207,9 +209,9 @@ class TaskPathNode extends StatelessWidget {
                             const Spacer(),
                             IconButton(
                               onPressed: onToggle,
-                              icon: const Icon(
+                              icon: Icon(
                                 Icons.check_circle_outline,
-                                color: Color(0xFF9FCFBB),
+                                color: DesignTokens.adaptiveMint(context),
                               ),
                               tooltip: 'Marcar como hecha',
                             ),
@@ -233,11 +235,13 @@ class TaskPathNode extends StatelessWidget {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: const Color(0xFF9FCFBB),
+          color: DesignTokens.adaptiveMint(context),
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF9FCFBB).withValues(alpha: 0.4),
+              color: DesignTokens.adaptiveMint(
+                context,
+              ).withValues(alpha: 0.4),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -250,13 +254,18 @@ class TaskPathNode extends StatelessWidget {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF9FCFBB), Color(0xFF89E219)],
+          gradient: LinearGradient(
+            colors: [
+              DesignTokens.adaptiveMint(context),
+              const Color(0xFF89E219),
+            ],
           ),
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF9FCFBB).withValues(alpha: 0.5),
+              color: DesignTokens.adaptiveMint(
+                context,
+              ).withValues(alpha: 0.5),
               blurRadius: 12,
               offset: const Offset(0, 4),
             ),
@@ -304,7 +313,7 @@ class TaskPathNode extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
-        color: const Color(0xFF1CB0F6).withValues(alpha: 0.1),
+        color: DesignTokens.info.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(8),
       ),
       child: const Text('📚', style: TextStyle(fontSize: 16)),
@@ -392,11 +401,16 @@ class TaskPathNode extends StatelessWidget {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.delete, color: Colors.red),
-              title: const Text(
-                'Eliminar',
-                style: TextStyle(color: Colors.red),
+            leading: Icon(
+              Icons.delete,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            title: Text(
+              'Eliminar',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.error,
               ),
+            ),
               onTap: () {
                 Navigator.pop(context);
                 onDelete?.call();

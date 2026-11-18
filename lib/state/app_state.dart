@@ -13,9 +13,12 @@ import '../models/support_message.dart';
 import '../models/achievement.dart';
 import '../models/mascot_state.dart';
 import '../models/user_profile_summary.dart';
+import '../core/alarm_sounds.dart';
+import '../core/design_tokens.dart';
 import '../services/alarm_service.dart';
 import '../services/app_state_repository.dart';
 import '../services/notification_service.dart';
+import '../utils/attachment_picker.dart';
 
 import 'settings_state.dart';
 import 'user_state.dart';
@@ -41,6 +44,9 @@ class AppState extends ChangeNotifier {
   final GamificationState gamification = GamificationState();
   final DataState data = DataState();
   final AlarmState alarms = AlarmState();
+
+  bool _initialized = false;
+  bool get isInitialized => _initialized;
 
   AppState() {
     settings.addListener(notifyListeners);
@@ -70,6 +76,7 @@ class AppState extends ChangeNotifier {
   // =========================================================================
 
   Future<void> initialize() async {
+    // Fase rápida: carga persistida sin bloquear UI
     _repository = await AppStateRepository.create();
     final stored = _repository!.load();
     if (stored != null) {
@@ -79,17 +86,21 @@ class AppState extends ChangeNotifier {
         debugPrint('Stored UniThrive state was ignored: $error');
       }
     }
-
-    await AlarmService.initialize();
     user.ensureDefaultProfile();
     _ensureActiveProfileSnapshot();
     _restoreProfileSnapshot(_profileSnapshots[user.activeProfileId!]);
-
-    NotificationService.setDefaultLeadMinutes(settings.reminderLeadMinutes);
-    _scheduleStreakReminder();
-    await reconcileAlarms();
-    await _persist();
+    _initialized = true;
     notifyListeners();
+
+    // Fase pesada diferida: no bloquea primer frame
+    await Future.microtask(() async {
+      await AlarmService.initialize();
+      NotificationService.setDefaultLeadMinutes(settings.reminderLeadMinutes);
+      _scheduleStreakReminder();
+      await reconcileAlarms();
+      await _persist();
+      notifyListeners();
+    });
   }
 
   Future<void> _persist() async {
@@ -129,9 +140,17 @@ class AppState extends ChangeNotifier {
   int get reminderLeadMinutes => settings.reminderLeadMinutes;
   double get textScale => settings.textScale;
   String get alarmSound => settings.alarmSound;
-  bool get voiceAiEnabled => settings.voiceAiEnabled;
-  String get voiceAiEndpointUrl => settings.voiceAiEndpointUrl;
-  String get voiceAiProxyToken => settings.voiceAiProxyToken;
+  int get focusDurationMinutes => settings.focusDurationMinutes;
+  int get breakDurationMinutes => settings.breakDurationMinutes;
+  Duration get focusDuration => settings.focusDuration;
+  Duration get breakDuration => settings.breakDuration;
+  bool get pomodoroEndSound => settings.pomodoroEndSound;
+  void setFocusDurationMinutes(int minutes) =>
+      settings.setFocusDurationMinutes(minutes);
+  void setBreakDurationMinutes(int minutes) =>
+      settings.setBreakDurationMinutes(minutes);
+  void setPomodoroEndSound(bool enabled) =>
+      settings.setPomodoroEndSound(enabled);
 
   bool get hasCompletedOnboarding => user.hasCompletedOnboarding;
   String get userName => user.userName;
@@ -446,22 +465,6 @@ class AppState extends ChangeNotifier {
     _persist();
   }
 
-  void setVoiceAiEnabled(bool enabled) {
-    settings.setVoiceAiEnabled(enabled);
-    _persist();
-  }
-
-  void updateVoiceAiConfig({
-    required String endpointUrl,
-    required String proxyToken,
-  }) {
-    settings.updateVoiceAiConfig(
-      endpointUrl: endpointUrl,
-      proxyToken: proxyToken,
-    );
-    _persist();
-  }
-
   void setMotivationalMessages(bool enabled) {
     settings.setMotivationalMessages(enabled);
     _persist();
@@ -518,7 +521,8 @@ class AppState extends ChangeNotifier {
       snoozeMinutes: snoozeMinutes,
       maxSnoozes: maxSnoozes,
       vibrate: vibrate,
-      soundAssetPath: soundAssetPath,
+      soundAssetPath:
+          soundAssetPath ?? AlarmSounds.assetPathFor(settings.alarmSound),
       createdAt: now,
       updatedAt: now,
     );
@@ -601,6 +605,35 @@ class AppState extends ChangeNotifier {
       previousNativeIds: alarms.nativeAlarmIdsByScheduleId,
     );
     alarms.replaceNativeIds(nativeIds);
+  }
+
+  /// Reprograma recordatorios de tareas y bloques, y sincroniza alarmas.
+  /// Usado por el pull-to-refresh del dashboard.
+  Future<void> rescheduleReminders() async {
+    final now = DateTime.now();
+    for (final task in data.tasks) {
+      NotificationService.cancelTaskReminder(task.id);
+      if (!task.completed &&
+          task.dueDate != null &&
+          task.dueDate!.isAfter(now) &&
+          settings.taskRemindersEnabled) {
+        final projectName = projectById(task.projectId)?.name;
+        NotificationService.scheduleTaskReminder(
+          taskId: task.id,
+          title: task.title,
+          dueDate: task.dueDate!,
+          customMinutes: task.customReminderMinutes,
+          contextLabel: projectName,
+          priority: task.priority,
+        );
+      }
+    }
+    for (final block in data.scheduleBlocks) {
+      NotificationService.cancelReminder('schedule_${block.id}');
+      NotificationService.scheduleScheduleReminder(block);
+    }
+    await reconcileAlarms();
+    notifyListeners();
   }
 
   Future<bool> openSystemAlarmClock({String? alarmId}) async {
@@ -783,7 +816,7 @@ class AppState extends ChangeNotifier {
     final quickProject = addProject(
       name: 'Tareas Rápidas',
       dueDate: DateTime.now().add(const Duration(days: 365)),
-      color: const Color(0xFF9FCFBB),
+      color: DesignTokens.mintStrong,
       description: 'Tareas rápidas y recordatorios',
       tag: 'General',
     );
@@ -943,6 +976,7 @@ class AppState extends ChangeNotifier {
     EnergyLevel? energy,
     String? description,
     String? attachmentPath,
+    List<String>? attachments,
     bool removeAttachment = false,
     int? customReminderMinutes,
     int? timeSpentMinutes,
@@ -954,9 +988,12 @@ class AppState extends ChangeNotifier {
     final idx = data.tasks.indexWhere((task) => task.id == taskId);
     if (idx == -1) return;
     final current = data.tasks[idx];
-    final nextAttachment = removeAttachment
-        ? null
-        : (attachmentPath ?? current.attachmentPath);
+    final nextAttachments = removeAttachment
+        ? const <String>[]
+        : attachments ??
+              (attachmentPath != null
+                    ? [attachmentPath]
+                    : current.attachments);
 
     final updatedTask = Task(
       id: current.id,
@@ -970,7 +1007,7 @@ class AppState extends ChangeNotifier {
       energy: energy ?? current.energy,
       priority: priority ?? current.priority,
       description: description ?? current.description,
-      attachmentPath: nextAttachment,
+      attachments: nextAttachments,
       labels: labels ?? current.labels,
       customReminderMinutes:
           customReminderMinutes ?? current.customReminderMinutes,
@@ -1100,6 +1137,11 @@ class AppState extends ChangeNotifier {
     if (idx == -1) return;
     final projectId = data.tasks[idx].projectId;
 
+    // Elimina archivos de adjuntos locales para no dejar huérfanos.
+    for (final path in data.tasks[idx].attachments) {
+      AttachmentPicker.deleteStoredFile(path);
+    }
+
     data.deleteTask(taskId);
     final linkedBlocks = data.scheduleBlocks
         .where((block) => block.linkedTaskId == taskId)
@@ -1158,6 +1200,7 @@ class AppState extends ChangeNotifier {
     ScheduleCategory? category,
     RecurrenceType? recurrence,
     DateTime? recurrenceEndDate,
+    bool clearRecurrenceEndDate = false,
     int? recurrenceInterval,
     String? recurrenceGroupId,
     List<int>? customWeekDays,
@@ -1175,7 +1218,9 @@ class AppState extends ChangeNotifier {
       location: location ?? current.location,
       category: category ?? current.category,
       recurrence: recurrence ?? current.recurrence,
-      recurrenceEndDate: recurrenceEndDate ?? current.recurrenceEndDate,
+      recurrenceEndDate: clearRecurrenceEndDate
+          ? null
+          : (recurrenceEndDate ?? current.recurrenceEndDate),
       recurrenceInterval: recurrenceInterval ?? current.recurrenceInterval,
       recurrenceGroupId: recurrenceGroupId ?? current.recurrenceGroupId,
       customWeekDays: customWeekDays ?? current.customWeekDays,

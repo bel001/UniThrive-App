@@ -6,6 +6,7 @@ import '../../models/schedule.dart';
 import '../../models/task.dart';
 import '../../state/app_state.dart';
 import '../../widgets/quick_task_form.dart';
+import '../../widgets/assistant_sheet.dart';
 import '../../widgets/global_search_sheet.dart';
 import '../../widgets/soft_page_route.dart';
 import '../../widgets/uni_card.dart';
@@ -13,11 +14,16 @@ import '../../widgets/uni_primary_button.dart';
 import '../../widgets/voice_schedule_sheet.dart';
 import '../../widgets/voice_task_sheet.dart';
 import '../alarms/alarm_screen.dart';
+import '../calendar/calendar_screen.dart';
 import '../tasks/task_history_screen.dart';
 import '../tasks/task_detail_screen.dart';
 import '../stats/statistics_screen.dart';
 import '../achievements/achievements_screen.dart';
 import '../focus/focus_timer_screen.dart';
+import '../supervisual/supervisual_screen.dart';
+import '../../utils/platform_capabilities.dart';
+import '../../widgets/uni_supervisual.dart';
+import '../notifications/notification_center_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -40,15 +46,13 @@ class DashboardScreen extends StatelessWidget {
                 .length;
 
             return RefreshIndicator(
-              onRefresh: () async {
-                await Future<void>.delayed(const Duration(milliseconds: 450));
-              },
+              onRefresh: () => appState.rescheduleReminders(),
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(
+                padding: EdgeInsets.fromLTRB(
                   DesignTokens.screenHorizontal,
                   12,
                   DesignTokens.screenHorizontal,
-                  128,
+                  96 + MediaQuery.of(context).padding.bottom,
                 ),
                 children: [
                   _DashboardHeader(
@@ -60,12 +64,10 @@ class DashboardScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 20),
                   _QuickActionStrip(
+                    onAssistant: () => showAssistantSheet(context),
                     onQuickTask: () => showQuickTaskForm(context),
-                    onNewClass: () => showVoiceScheduleSheet(
-                      context,
-                      referenceDay: DateTime.now(),
-                    ),
-                    onVoiceTask: () => showVoiceTaskSheet(context),
+                    onNewClass: () => _showVoiceScheduleIfSupported(context),
+                    onVoiceTask: () => _showVoiceTaskIfSupported(context),
                     onSearch: () => showGlobalSearchSheet(context),
                     onAlarm: () => Navigator.of(
                       context,
@@ -85,7 +87,7 @@ class DashboardScreen extends StatelessWidget {
                     todayTasks: todayTasks,
                     todayBlocks: todayBlocks,
                     onQuickTask: () => showQuickTaskForm(context),
-                    onVoiceTask: () => showVoiceTaskSheet(context),
+                    onVoiceTask: () => _showVoiceTaskIfSupported(context),
                     onViewUpcoming: () => _showTasksSheet(
                       context,
                       appState: appState,
@@ -104,6 +106,10 @@ class DashboardScreen extends StatelessWidget {
                     todayTasks: todayTasks,
                     todayBlocks: todayBlocks,
                     overdueCount: overdueTasks.length,
+                    onOpenTask: (task) => _showTaskDetail(context, task),
+                    onOpenCalendar: () => Navigator.of(context).push(
+                      SoftPageRoute(builder: (_) => const CalendarScreen()),
+                    ),
                   ),
                   if (overdueTasks.isNotEmpty) ...[
                     const SizedBox(height: 18),
@@ -168,6 +174,30 @@ class DashboardScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  void _showVoiceTaskIfSupported(BuildContext context) {
+    if (!PlatformCapabilities.supportsVoiceInput) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('El dictado por voz está disponible en Android e iOS.'),
+        ),
+      );
+      return;
+    }
+    showVoiceTaskSheet(context);
+  }
+
+  void _showVoiceScheduleIfSupported(BuildContext context) {
+    if (!PlatformCapabilities.supportsVoiceInput) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('El dictado por voz está disponible en Android e iOS.'),
+        ),
+      );
+      return;
+    }
+    showVoiceScheduleSheet(context, referenceDay: DateTime.now());
   }
 
   List<Task> _getTodayTasks(AppState appState) {
@@ -330,10 +360,10 @@ class _DashboardHeader extends StatelessWidget {
     required this.onSearch,
     required this.onOpenTaskCenter,
   });
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final dateLabel = _capitalize(
       DateFormat("EEEE d 'de' MMMM", 'es').format(DateTime.now()),
     );
@@ -341,62 +371,109 @@ class _DashboardHeader extends StatelessWidget {
         ? 'Usuario'
         : appState.userName.trim().split(' ').first;
 
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(dateLabel, style: theme.textTheme.bodyMedium),
-              const SizedBox(height: 6),
-              Text('Hola, $firstName', style: theme.textTheme.displayLarge),
-              const SizedBox(height: 6),
-              Text(
-                'Tu espacio de estudio para avanzar con calma.',
-                style: theme.textTheme.bodyMedium,
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 12),
-        IconButton.filledTonal(
-          tooltip: 'Buscar en la app',
-          onPressed: onSearch,
-          icon: const Icon(Icons.search_rounded),
-        ),
-        const SizedBox(width: 8),
-        IconButton.filledTonal(
-          tooltip: 'Centro de tareas',
-          onPressed: onOpenTaskCenter,
-          icon: const Icon(Icons.checklist_rounded),
-        ),
-        const SizedBox(width: 8),
-        Container(
-          width: 56,
-          height: 56,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 360;
+
+        // Avatar con borde lila como en el mockup de inicio.
+        final avatar = Container(
+          width: narrow ? 44 : 48,
+          height: narrow ? 44 : 48,
           decoration: BoxDecoration(
-            color: theme.colorScheme.primaryContainer,
             shape: BoxShape.circle,
             border: Border.all(
-              color: theme.colorScheme.primary.withValues(alpha: 0.16),
+              color: (isDark
+                      ? DesignTokens.lilac
+                      : theme.colorScheme.primary)
+                  .withValues(alpha: 0.45),
+              width: 2,
             ),
           ),
           child: ClipOval(
-            child: Image.asset(
-              'assets/mascot/mascot_happy.png',
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Center(
-                child: Text(
-                  firstName.characters.first.toUpperCase(),
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    color: theme.colorScheme.primary,
+            child: Padding(
+              padding: const EdgeInsets.all(2),
+              child: Image.asset(
+                'assets/mascot/mascot_happy.png',
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Center(
+                  child: Text(
+                    firstName.characters.first.toUpperCase(),
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: theme.colorScheme.primary,
+                    ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
-      ],
+        );
+
+        final actions = Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              tooltip: 'Panel supervisual',
+              onPressed: () => Navigator.of(context).push(
+                SoftPageRoute(builder: (_) => const SupervisualScreen()),
+              ),
+              icon: const Icon(Icons.auto_graph_rounded, size: 22),
+            ),
+            IconButton(
+              tooltip: 'Centro de tareas',
+              onPressed: onOpenTaskCenter,
+              icon: const Icon(Icons.checklist_rounded, size: 22),
+            ),
+            IconButton(
+              tooltip: 'Notificaciones',
+              onPressed: () => Navigator.of(context).push(
+                SoftPageRoute(
+                  builder: (_) => const NotificationCenterScreen(),
+                ),
+              ),
+              icon: const Icon(Icons.notifications_outlined, size: 22),
+            ),
+          ],
+        );
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [avatar, const Spacer(), actions],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              dateLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.92),
+                letterSpacing: 0.2,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '¡Hola, $firstName!',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              softWrap: true,
+              style: theme.textTheme.displayMedium?.copyWith(
+                fontSize: narrow ? 30 : 34,
+                color: isDark
+                    ? DesignTokens.lilac
+                    : theme.colorScheme.primary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Listo para mantener tu racha de aprendizaje.',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyMedium,
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -427,6 +504,7 @@ class _TodayCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final progress = todayTasks.isEmpty
         ? 0.0
         : completedToday / todayTasks.length;
@@ -476,30 +554,88 @@ class _TodayCard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(summary, style: theme.textTheme.bodyMedium),
+          Text(
+            'Enfoque del día',
+            style: theme.textTheme.titleMedium,
+            textAlign: TextAlign.center,
+          ),
           const SizedBox(height: 18),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(999),
-            child: LinearProgressIndicator(value: progress, minHeight: 8),
+          Center(
+            child: Semantics(
+              label: 'Progreso de hoy: $completedToday de ${todayTasks.length} tareas',
+              child: UniRingProgress(
+                progress: progress,
+                size: 160,
+                progressColor: DesignTokens.mintStrong,
+                center: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${(progress * 100).round()}%',
+                      style: theme.textTheme.displayMedium?.copyWith(
+                        fontSize: 32,
+                        color: isDark
+                            ? DesignTokens.mint
+                            : DesignTokens.success,
+                      ),
+                    ),
+                    Text(
+                      'Completado',
+                      style: theme.textTheme.labelSmall,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          Center(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: DesignTokens.mint,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.local_fire_department_rounded,
+                    size: 18,
+                    color: Color(0xFF003827),
+                  ),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      appState.streakDays > 0
+                          ? '¡${appState.streakDays} días de racha!'
+                          : 'Empieza tu racha hoy',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: const Color(0xFF003827),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
           const SizedBox(height: 18),
           Row(
             children: [
               Expanded(
                 child: _MetricCard(
-                  label: 'Racha',
-                  value: '${appState.streakDays} días',
-                  tone: theme.colorScheme.primaryContainer,
-                  textColor: theme.colorScheme.primary,
-                  onTap: onStreakTap,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _MetricCard(
                   label: 'Nivel',
                   value: 'Nv ${appState.level}',
-                  tone: theme.colorScheme.surfaceContainerHighest,
-                  textColor: theme.colorScheme.onSurface,
+                  tone: (isDark
+                          ? DesignTokens.lilac
+                          : theme.colorScheme.primary)
+                      .withValues(alpha: isDark ? 0.14 : 0.10),
+                  textColor: isDark
+                      ? DesignTokens.lilac
+                      : theme.colorScheme.primary,
                   onTap: onLevelTap,
                 ),
               ),
@@ -510,8 +646,8 @@ class _TodayCard extends StatelessWidget {
                   value: nextTask?.dueDate != null
                       ? DateFormat('HH:mm').format(nextTask!.dueDate!)
                       : 'Libre',
-                  tone: theme.colorScheme.tertiaryContainer,
-                  textColor: theme.colorScheme.onTertiaryContainer,
+                  tone: theme.colorScheme.surfaceContainerHighest,
+                  textColor: theme.colorScheme.onSurface,
                 ),
               ),
             ],
@@ -523,6 +659,11 @@ class _TodayCard extends StatelessWidget {
             decoration: BoxDecoration(
               color: theme.colorScheme.surfaceContainerHighest,
               borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: theme.brightness == Brightness.dark
+                    ? Colors.white.withValues(alpha: 0.06)
+                    : theme.colorScheme.outlineVariant.withValues(alpha: 0.7),
+              ),
             ),
             child: Text(
               nextClass == null
@@ -534,7 +675,7 @@ class _TodayCard extends StatelessWidget {
           const SizedBox(height: 18),
           LayoutBuilder(
             builder: (context, constraints) {
-              final stackActions = constraints.maxWidth < 260;
+              final stackActions = constraints.maxWidth < 380;
               if (stackActions) {
                 return Column(
                   children: [
@@ -592,6 +733,7 @@ class _TodayCard extends StatelessWidget {
 
 class _QuickActionStrip extends StatelessWidget {
   const _QuickActionStrip({
+    required this.onAssistant,
     required this.onQuickTask,
     required this.onNewClass,
     required this.onVoiceTask,
@@ -600,6 +742,7 @@ class _QuickActionStrip extends StatelessWidget {
     required this.onFocus,
   });
 
+  final VoidCallback onAssistant;
   final VoidCallback onQuickTask;
   final VoidCallback onNewClass;
   final VoidCallback onVoiceTask;
@@ -611,14 +754,22 @@ class _QuickActionStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final items = [
       _ActionTile(
+        icon: Icons.auto_awesome_rounded,
+        label: 'Asistente',
+        onTap: onAssistant,
+        variant: _ActionTileVariant.primary,
+      ),
+      _ActionTile(
         icon: Icons.add_task_rounded,
         label: 'Nueva tarea',
         onTap: onQuickTask,
+        variant: _ActionTileVariant.secondary,
       ),
       _ActionTile(
         icon: Icons.school_rounded,
         label: 'Nueva clase',
         onTap: onNewClass,
+        variant: _ActionTileVariant.secondary,
       ),
       _ActionTile(
         icon: Icons.mic_rounded,
@@ -648,51 +799,83 @@ class _QuickActionStrip extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         clipBehavior: Clip.none,
         itemCount: items.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
         itemBuilder: (context, index) => items[index],
       ),
     );
   }
 }
 
+enum _ActionTileVariant { primary, secondary, neutral }
+
 class _ActionTile extends StatelessWidget {
   const _ActionTile({
     required this.icon,
     required this.label,
     required this.onTap,
+    this.variant = _ActionTileVariant.neutral,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final _ActionTileVariant variant;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return InkWell(
-      borderRadius: BorderRadius.circular(20),
-      onTap: onTap,
-      child: Container(
-        width: 155,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: theme.colorScheme.outlineVariant),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 20, color: theme.colorScheme.primary),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.labelLarge,
+    final isDark = theme.brightness == Brightness.dark;
+    final isPrimary = variant == _ActionTileVariant.primary;
+    final isSecondary = variant == _ActionTileVariant.secondary;
+
+    final bg = isPrimary
+        ? theme.colorScheme.primary
+        : theme.colorScheme.surfaceContainerLow;
+    final fg = isPrimary ? theme.colorScheme.onPrimary : theme.colorScheme.primary;
+    final textColor = isPrimary ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface;
+    final borderColor = isPrimary
+        ? theme.colorScheme.primary.withValues(alpha: 0.0)
+        : isSecondary
+            ? theme.colorScheme.primary.withValues(alpha: isDark ? 0.28 : 0.22)
+            : isDark
+                ? Colors.white.withValues(alpha: 0.08)
+                : theme.colorScheme.outlineVariant;
+
+    return Material(
+      color: isPrimary ? DesignTokens.accentDeep : Colors.transparent,
+      borderRadius: BorderRadius.circular(24),
+      elevation: 0,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(24),
+        onTap: onTap,
+        child: Container(
+          width: isPrimary ? 162 : 152,
+          padding: EdgeInsets.fromLTRB(14, 12, 14, isPrimary ? 8 : 12),
+          margin: isPrimary
+              ? const EdgeInsets.only(bottom: DesignTokens.pressableDepth)
+              : EdgeInsets.zero,
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: borderColor, width: 1),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, size: 20, color: fg),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: textColor,
+                    fontWeight: isPrimary ? FontWeight.w700 : FontWeight.w600,
+                  ),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -704,47 +887,132 @@ class _DailySummaryCard extends StatelessWidget {
     required this.todayTasks,
     required this.todayBlocks,
     required this.overdueCount,
+    required this.onOpenTask,
+    required this.onOpenCalendar,
   });
 
   final List<Task> todayTasks;
   final List<ScheduleBlock> todayBlocks;
   final int overdueCount;
+  final ValueChanged<Task> onOpenTask;
+  final VoidCallback onOpenCalendar;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final pending = todayTasks.where((t) => !t.completed).take(2).toList();
+    final block = todayBlocks.isEmpty ? null : todayBlocks.first;
+
     return UniCard(
-      radius: 28,
+      radius: 24,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Resumen del día', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
+          const SizedBox(height: 14),
+          if (pending.isEmpty && block == null)
+            Text(
+              'Nada pendiente hoy. Día despejado.',
+              style: theme.textTheme.bodyMedium,
+            ),
+          for (final task in pending)
+            _SummaryRow(
+              icon: Icons.menu_book_rounded,
+              iconTone: theme.colorScheme.errorContainer.withValues(alpha: 0.35),
+              iconColor: theme.colorScheme.error,
+              title: task.title,
+              subtitle: task.dueDate == null
+                  ? 'Sin hora límite'
+                  : 'Vence a las ${DateFormat('HH:mm').format(task.dueDate!)}',
+              onTap: () => onOpenTask(task),
+            ),
+          if (block != null)
+            _SummaryRow(
+              icon: Icons.science_rounded,
+              iconTone: DesignTokens.mint.withValues(alpha: 0.18),
+              iconColor: DesignTokens.mintStrong,
+              title: block.title,
+              subtitle:
+                  '${DateFormat('HH:mm').format(block.start)} – ${DateFormat('HH:mm').format(block.end)}',
+              onTap: onOpenCalendar,
+            ),
+          if (overdueCount > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                '$overdueCount vencida${overdueCount == 1 ? '' : 's'} pendiente${overdueCount == 1 ? '' : 's'} de atención',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryRow extends StatelessWidget {
+  const _SummaryRow({
+    required this.icon,
+    required this.iconTone,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final Color iconTone;
+  final Color iconColor;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
             children: [
-              _PillLabel(
-                icon: Icons.task_alt_rounded,
-                label: '${todayTasks.length} tareas',
-                backgroundColor: theme.colorScheme.primaryContainer,
-                foregroundColor: theme.colorScheme.primary,
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: iconTone,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: iconColor, size: 22),
               ),
-              _PillLabel(
-                icon: Icons.calendar_month_rounded,
-                label: '${todayBlocks.length} bloques',
-                backgroundColor: theme.colorScheme.tertiaryContainer,
-                foregroundColor: theme.colorScheme.onTertiaryContainer,
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(subtitle, style: theme.textTheme.bodySmall),
+                  ],
+                ),
               ),
-              _PillLabel(
-                icon: Icons.warning_amber_rounded,
-                label: '$overdueCount vencidas',
-                backgroundColor: theme.colorScheme.errorContainer,
-                foregroundColor: theme.colorScheme.error,
+              Icon(
+                Icons.chevron_right_rounded,
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -885,12 +1153,16 @@ class _TaskSection extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 14),
-        if (tasks.isEmpty)
-          _EmptyTaskState(message: emptyMessage)
-        else
-          SizedBox(
-            height: 160,
-            child: ListView.separated(
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          child: tasks.isEmpty
+              ? _EmptyTaskState(message: emptyMessage)
+              : SizedBox(
+                  key: ValueKey('tasks_${tasks.length}'),
+                  height: 160,
+                  child: ListView.separated(
               scrollDirection: Axis.horizontal,
               clipBehavior: Clip.none,
               itemCount: tasks.length,
@@ -909,6 +1181,7 @@ class _TaskSection extends StatelessWidget {
               },
             ),
           ),
+        ),
       ],
     );
   }
@@ -938,11 +1211,12 @@ class _TaskRowCard extends StatelessWidget {
       EnergyLevel.medium => theme.colorScheme.tertiary,
       EnergyLevel.high => theme.colorScheme.error,
     };
+    final isDark = theme.brightness == Brightness.dark;
     final priorityColor = switch (task.priority) {
-      TaskPriority.low => Colors.green,
+      TaskPriority.low => theme.colorScheme.secondary,
       TaskPriority.medium => theme.colorScheme.primary,
-      TaskPriority.high => Colors.orange,
-      TaskPriority.urgent => theme.colorScheme.error,
+      TaskPriority.high => isDark ? DesignTokens.warningDark : DesignTokens.warning,
+      TaskPriority.urgent => isDark ? DesignTokens.errorDark : theme.colorScheme.error,
     };
 
     return Dismissible(
@@ -979,7 +1253,11 @@ class _TaskRowCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: theme.colorScheme.surfaceContainerLow,
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: theme.colorScheme.outlineVariant),
+            border: Border.all(
+              color: theme.brightness == Brightness.dark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : theme.colorScheme.outlineVariant,
+            ),
           ),
           child: Row(
             children: [
@@ -1120,29 +1398,40 @@ class _MetricCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Material(
-      color: tone,
-      borderRadius: BorderRadius.circular(20),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: theme.textTheme.labelMedium?.copyWith(color: textColor),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                value,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.titleSmall?.copyWith(color: textColor),
-              ),
-            ],
+    final isDark = theme.brightness == Brightness.dark;
+    return Semantics(
+      label: '$label: $value',
+      button: onTap != null,
+      child: Material(
+        color: tone,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(
+            color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.transparent,
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: theme.textTheme.labelMedium?.copyWith(color: textColor),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleSmall?.copyWith(color: textColor),
+                ),
+              ],
+            ),
           ),
         ),
       ),

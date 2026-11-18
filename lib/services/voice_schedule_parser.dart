@@ -1,9 +1,17 @@
+import '../models/project.dart';
+import '../models/schedule.dart';
 import '../models/voice_schedule_draft.dart';
 
 class VoiceScheduleParser {
   const VoiceScheduleParser();
 
-  VoiceScheduleDraft parse(String transcript, {DateTime? referenceTime}) {
+  /// Parse single class or event dictation.
+  VoiceScheduleDraft parse(
+    String transcript, {
+    DateTime? referenceTime,
+    Iterable<Project> existingProjects = const [],
+    Iterable<ScheduleBlock> existingBlocks = const [],
+  }) {
     final reference = referenceTime ?? DateTime.now();
     final compactTranscript = _compactWhitespace(transcript);
     if (compactTranscript.isEmpty) {
@@ -11,15 +19,45 @@ class VoiceScheduleParser {
     }
 
     final notes = <String>[];
-    final normalized = _normalizeForSearch(compactTranscript);
-    final days = _extractWeekDays(normalized);
-    final timeRange = _extractTimeRange(compactTranscript);
-    final recurrenceEndDate = _extractEndDate(normalized, reference);
-    final title = _extractTitle(compactTranscript, normalized);
-    final location = _extractLocation(compactTranscript, timeRange?.endIndex);
+    // 1. Normalize spoken numbers and fraction words ("ocho y media" -> "8:30")
+    final preprocessed = _normalizeSpokenFractions(
+      _normalizeSpokenNumbers(compactTranscript),
+    );
+    final normalized = _fuzzyCorrectDays(_normalizeForSearch(preprocessed));
 
-    final resolvedDays = days.isEmpty ? [reference.weekday] : days;
-    if (days.isEmpty) {
+    // 2. Check for exact specific date (e.g. "jueves 27 de agosto")
+    final specificDateExtraction = _extractSpecificDate(
+      normalized,
+      preprocessed,
+      reference,
+    );
+    final exactDate = specificDateExtraction?.date;
+
+    // 3. Extract week days and time range
+    final days = _extractWeekDays(normalized);
+    final timeRange = _extractTimeRange(preprocessed);
+    final academicPeriodEndDate = _extractEndDate(normalized, reference);
+    final title = _extractTitle(preprocessed, normalized);
+    final location = _extractLocation(preprocessed, timeRange?.endIndex);
+
+    // 4. Resolve recurrence vs single event
+    final isRepeatingMentioned =
+        normalized.contains('todos los') ||
+        normalized.contains('todas las') ||
+        normalized.contains('cada') ||
+        RegExp(r'\bhasta\s+(?:el\s+\d|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|parciales|finales|el\s+ciclo|el\s+semestre)\b').hasMatch(normalized) ||
+        normalized.contains('semanal') ||
+        normalized.contains('diario') ||
+        days.length > 1;
+
+    final isSingleEvent =
+        specificDateExtraction != null && !isRepeatingMentioned;
+
+    final resolvedDays = (exactDate != null && !isRepeatingMentioned)
+        ? [exactDate.weekday]
+        : (days.isEmpty ? [reference.weekday] : days);
+
+    if (days.isEmpty && exactDate == null) {
       notes.add(
         'No detecté días específicos. Dejé el día que estabas viendo para que lo ajustes.',
       );
@@ -32,13 +70,24 @@ class VoiceScheduleParser {
       );
     }
 
-    final firstStart = _resolveFirstOccurrence(
-      reference: reference,
-      weekDays: resolvedDays,
-      hour: resolvedTimeRange.startHour,
-      minute: resolvedTimeRange.startMinute,
-    );
-    final firstEnd = DateTime(
+    // 5. Calculate start & end DateTime
+    final anchorDate = exactDate ?? reference;
+    final firstStart = exactDate != null
+        ? DateTime(
+            anchorDate.year,
+            anchorDate.month,
+            anchorDate.day,
+            resolvedTimeRange.startHour,
+            resolvedTimeRange.startMinute,
+          )
+        : _resolveFirstOccurrence(
+            reference: reference,
+            weekDays: resolvedDays,
+            hour: resolvedTimeRange.startHour,
+            minute: resolvedTimeRange.startMinute,
+          );
+
+    final firstEndCandidate = DateTime(
       firstStart.year,
       firstStart.month,
       firstStart.day,
@@ -46,14 +95,25 @@ class VoiceScheduleParser {
       resolvedTimeRange.endMinute,
     );
 
-    final adjustedEnd = firstEnd.isAfter(firstStart)
-        ? firstEnd
-        : firstEnd.add(const Duration(hours: 1));
+    final adjustedEnd = firstEndCandidate.isAfter(firstStart)
+        ? firstEndCandidate
+        : firstEndCandidate.add(const Duration(hours: 1));
 
-    if (recurrenceEndDate == null) {
+    var recurrenceEndDate = isSingleEvent ? null : academicPeriodEndDate;
+
+    if (!isSingleEvent && recurrenceEndDate == null) {
       notes.add(
         'No detecté fin de ciclo. La serie se guardará sin fecha límite hasta que la edites.',
       );
+    }
+
+    if (exactDate != null) {
+      final dateStr = '${exactDate.day}/${exactDate.month}/${exactDate.year}';
+      if (isSingleEvent) {
+        notes.add('Detecté la fecha específica $dateStr para este evento único.');
+      } else {
+        notes.add('Inicio fijado para la fecha $dateStr.');
+      }
     }
 
     if (location.isEmpty) {
@@ -69,6 +129,29 @@ class VoiceScheduleParser {
       );
     }
 
+    // 6. Match project
+    String? matchedProjectId;
+    final matchedProject = _matchProject(cleanedTitle, existingProjects);
+    if (matchedProject != null) {
+      matchedProjectId = matchedProject.id;
+      notes.add('Vinculado automáticamente a "${matchedProject.name}".');
+    }
+
+    // 7. Check conflicts
+    var hasConflict = false;
+    String? conflictMsg;
+    for (final block in existingBlocks) {
+      if (resolvedDays.contains(block.start.weekday)) {
+        if (_overlapsTime(firstStart, adjustedEnd, block.start, block.end)) {
+          hasConflict = true;
+          conflictMsg =
+              'Conflictúa con "${block.title}" (${_formatTime(block.start)} - ${_formatTime(block.end)})';
+          notes.add('⚠️ $conflictMsg');
+          break;
+        }
+      }
+    }
+
     return VoiceScheduleDraft(
       transcript: compactTranscript,
       title: cleanedTitle,
@@ -77,15 +160,225 @@ class VoiceScheduleParser {
       firstEnd: adjustedEnd,
       weekDays: resolvedDays,
       recurrenceEndDate: recurrenceEndDate,
+      isSingleEvent: isSingleEvent,
+      linkedProjectId: matchedProjectId,
+      hasConflict: hasConflict,
+      conflictMessage: conflictMsg,
       notes: notes,
     );
   }
 
-  List<int> _extractWeekDays(String normalizedTranscript) {
-    final days = <int>{};
-    final rangeMatch = RegExp(
-      r'(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\s+a\s+(lunes|martes|miercoles|jueves|viernes|sabado|domingo)',
+  /// Parses multi-class batch dictations (e.g. "Cálculo lunes de 8 a 10 am; y los martes Física de 10 a 12 pm").
+  List<VoiceScheduleDraft> parseBatch(
+    String transcript, {
+    DateTime? referenceTime,
+    Iterable<Project> existingProjects = const [],
+    Iterable<ScheduleBlock> existingBlocks = const [],
+  }) {
+    final reference = referenceTime ?? DateTime.now();
+    final compact = _compactWhitespace(transcript);
+    if (compact.isEmpty) return [];
+
+    final segments = compact
+        .split(
+          RegExp(
+            r';|\n|\b(?:despues|luego|ademas|tambien|y\s+los|y\s+las|y\s+el|y\s+mi\s+clase|y\s+clase)\b',
+            caseSensitive: false,
+          ),
+        )
+        .map((s) => s.trim())
+        .where((s) => s.length > 5)
+        .toList();
+
+    if (segments.length <= 1) {
+      return [
+        parse(
+          compact,
+          referenceTime: reference,
+          existingProjects: existingProjects,
+          existingBlocks: existingBlocks,
+        ),
+      ];
+    }
+
+    final results = <VoiceScheduleDraft>[];
+    for (final segment in segments) {
+      final draft = parse(
+        segment,
+        referenceTime: reference,
+        existingProjects: existingProjects,
+        existingBlocks: existingBlocks,
+      );
+      if (draft.canSave) {
+        results.add(draft);
+      }
+    }
+
+    return results.isEmpty
+        ? [
+            parse(
+              compact,
+              referenceTime: reference,
+              existingProjects: existingProjects,
+              existingBlocks: existingBlocks,
+            ),
+          ]
+        : results;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Specific Date extraction (e.g. "jueves 27 de agosto")
+  // ---------------------------------------------------------------------------
+
+  _SpecificDateResult? _extractSpecificDate(
+    String normalizedTranscript,
+    String rawTranscript,
+    DateTime reference,
+  ) {
+    final match = RegExp(
+      r'(?:(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\s+)?(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)(?:\s+de\s+(\d{4}))?',
     ).firstMatch(normalizedTranscript);
+
+    if (match != null) {
+      final day = int.tryParse(match.group(2) ?? '');
+      final month = _monthFromSpanish(match.group(3) ?? '');
+      final rawYear = match.group(4);
+      if (day != null && month != null) {
+        var year = reference.year;
+        if (rawYear != null) {
+          year = int.parse(rawYear);
+        } else if (month < reference.month ||
+            (month == reference.month && day < reference.day - 7)) {
+          year += 1;
+        }
+        final date = _safeDate(year, month, day);
+        if (date != null) {
+          return _SpecificDateResult(date: date, matchedText: match.group(0) ?? '');
+        }
+      }
+    }
+
+    final slashMatch = RegExp(
+      r'\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b',
+    ).firstMatch(normalizedTranscript);
+    if (slashMatch != null) {
+      final day = int.tryParse(slashMatch.group(1) ?? '');
+      final month = int.tryParse(slashMatch.group(2) ?? '');
+      final rawYear = slashMatch.group(3);
+      if (day != null && month != null && month <= 12) {
+        var year = reference.year;
+        if (rawYear != null) {
+          year = int.parse(rawYear.length == 2 ? '20$rawYear' : rawYear);
+        }
+        final date = _safeDate(year, month, day);
+        if (date != null) {
+          return _SpecificDateResult(date: date, matchedText: slashMatch.group(0) ?? '');
+        }
+      }
+    }
+
+    if (RegExp(r'\bpasado\s+manana\b').hasMatch(normalizedTranscript)) {
+      return _SpecificDateResult(
+        date: reference.add(const Duration(days: 2)),
+        matchedText: 'pasado manana',
+      );
+    }
+    if (RegExp(r'(?<!de\s+la\s+|por\s+la\s+)\bmanana\b').hasMatch(normalizedTranscript)) {
+      return _SpecificDateResult(
+        date: reference.add(const Duration(days: 1)),
+        matchedText: 'manana',
+      );
+    }
+
+    return null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Fraction / Half-hour spoken normalization ("ocho y media" -> "8:30")
+  // ---------------------------------------------------------------------------
+
+  String _normalizeSpokenFractions(String transcript) {
+    var result = transcript;
+
+    result = result.replaceAllMapped(
+      RegExp(r'\b(\d{1,2})\s+y\s+media\b', caseSensitive: false),
+      (match) => '${match.group(1)}:30',
+    );
+    result = result.replaceAllMapped(
+      RegExp(r'\b(\d{1,2})\s+y\s+cuarto\b', caseSensitive: false),
+      (match) => '${match.group(1)}:15',
+    );
+    result = result.replaceAllMapped(
+      RegExp(r'\b(\d{1,2})\s+y\s+quince\b', caseSensitive: false),
+      (match) => '${match.group(1)}:15',
+    );
+    result = result.replaceAllMapped(
+      RegExp(r'\b(\d{1,2})\s+y\s+cuarenta\s+y\s+cinco\b', caseSensitive: false),
+      (match) => '${match.group(1)}:45',
+    );
+
+    return result;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Spoken number normalization
+  // ---------------------------------------------------------------------------
+
+  static const _spokenNumbers = <String, String>{
+    'cero': '0',
+    'una': '1',
+    'uno': '1',
+    'dos': '2',
+    'tres': '3',
+    'cuatro': '4',
+    'cinco': '5',
+    'seis': '6',
+    'siete': '7',
+    'ocho': '8',
+    'nueve': '9',
+    'diez': '10',
+    'once': '11',
+    'doce': '12',
+    'trece': '13',
+    'catorce': '14',
+    'quince': '15',
+    'dieciseis': '16',
+    'diecisiete': '17',
+    'dieciocho': '18',
+    'diecinueve': '19',
+    'veinte': '20',
+    'veintiuno': '21',
+    'veintidos': '22',
+    'veintitres': '23',
+    'veinticuatro': '24',
+    'mediodia': '12',
+    'mediodía': '12',
+  };
+
+  String _normalizeSpokenNumbers(String transcript) {
+    var result = transcript;
+    final sorted = _spokenNumbers.keys.toList()
+      ..sort((a, b) => b.length.compareTo(a.length));
+    for (final word in sorted) {
+      result = result.replaceAllMapped(
+        RegExp('\\b${RegExp.escape(word)}\\b', caseSensitive: false),
+        (match) => _spokenNumbers[word.toLowerCase()]!,
+      );
+    }
+    return result;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Day extraction with fuzzy matching
+  // ---------------------------------------------------------------------------
+
+  List<int> _extractWeekDays(String normalizedTranscript) {
+    final corrected = _fuzzyCorrectDays(normalizedTranscript);
+    final days = <int>{};
+
+    final rangeMatch = RegExp(
+      r'\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\s+a\s+(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b',
+    ).firstMatch(corrected);
 
     if (rangeMatch != null) {
       final startDay = _weekdayFromSpanish(rangeMatch.group(1) ?? '');
@@ -102,8 +395,8 @@ class VoiceScheduleParser {
     }
 
     final allMatches = RegExp(
-      r'(lunes|martes|miercoles|jueves|viernes|sabado|domingo)',
-    ).allMatches(normalizedTranscript);
+      r'\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b',
+    ).allMatches(corrected);
     for (final match in allMatches) {
       final weekday = _weekdayFromSpanish(match.group(1) ?? '');
       if (weekday != null) {
@@ -111,17 +404,59 @@ class VoiceScheduleParser {
       }
     }
 
+    if (corrected.contains('entre semana')) {
+      days.addAll([1, 2, 3, 4, 5]);
+    }
+    if (corrected.contains('fin de semana') ||
+        corrected.contains('fines de semana')) {
+      days.addAll([6, 7]);
+    }
+    if (corrected.contains('todos los dias') || corrected.contains('diario')) {
+      days.addAll([1, 2, 3, 4, 5, 6, 7]);
+    }
+
     final ordered = days.toList()..sort();
     return ordered;
   }
 
+  String _fuzzyCorrectDays(String text) {
+    const corrections = <String, String>{
+      'lune': 'lunes',
+      'lumes': 'lunes',
+      'marte': 'martes',
+      'marque': 'martes',
+      'miercole': 'miercoles',
+      'mierkoles': 'miercoles',
+      'juebe': 'jueves',
+      'juebes': 'jueves',
+      'jueve': 'jueves',
+      'vierne': 'viernes',
+      'biernes': 'viernes',
+      'sabadoo': 'sabado',
+      'savado': 'sabado',
+      'domingoo': 'domingo',
+    };
+    var result = text;
+    for (final entry in corrections.entries) {
+      result = result.replaceAll(
+        RegExp('\\b${RegExp.escape(entry.key)}\\b'),
+        entry.value,
+      );
+    }
+    return result;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Time range extraction — supports exact minutes (8:30 pm, 6:00 am)
+  // ---------------------------------------------------------------------------
+
   _VoiceScheduleTimeRange? _extractTimeRange(String transcript) {
     final match = RegExp(
-      r'(?:de\s+)?(\d{1,2})(?::(\d{2}))?\s*(a\.?\s*m\.?|p\.?\s*m\.?|am|pm|de\s+la\s+mañana|de\s+la\s+tarde|de\s+la\s+noche)?\s*(?:a|-|hasta)\s*(\d{1,2})(?::(\d{2}))?\s*(a\.?\s*m\.?|p\.?\s*m\.?|am|pm|de\s+la\s+mañana|de\s+la\s+tarde|de\s+la\s+noche)?',
+      r'(?:de\s+)?(?:las?\s+)?(\d{1,2})(?::(\d{2}))?\s*(a\.?\s*m\.?|p\.?\s*m\.?|am|pm|de\s+la\s+(?:mañana|manana)|de\s+la\s+tarde|de\s+la\s+noche)?\s*(?:a|-|hasta)\s*(?:las?\s+)?(\d{1,2})(?::(\d{2}))?\s*(a\.?\s*m\.?|p\.?\s*m\.?|am|pm|de\s+la\s+(?:mañana|manana)|de\s+la\s+tarde|de\s+la\s+noche)?',
       caseSensitive: false,
     ).firstMatch(transcript);
     if (match == null) {
-      return null;
+      return _extractSingleTime(transcript);
     }
 
     final startHourRaw = int.tryParse(match.group(1) ?? '');
@@ -138,7 +473,11 @@ class VoiceScheduleParser {
     var startHour = _applyHourHint(startHourRaw, startHint ?? sharedHint);
     var endHour = _applyHourHint(endHourRaw, endHint ?? sharedHint);
 
-    if (startHint == null && endHint == null) {
+    // Fix edge case: "10 a 12 pm" means 10:00 am to 12:00 pm (noon)
+    if (startHint == null && endHint == 12 && startHourRaw >= 7 && startHourRaw <= 11 && endHourRaw == 12) {
+      startHour = startHourRaw;
+      endHour = 12;
+    } else if (startHint == null && endHint == null) {
       startHour = _inferClassHour(startHourRaw);
       endHour = _inferClassHour(endHourRaw);
     } else if (startHint == null) {
@@ -164,6 +503,32 @@ class VoiceScheduleParser {
     );
   }
 
+  _VoiceScheduleTimeRange? _extractSingleTime(String transcript) {
+    final match = RegExp(
+      r'a\s+las?\s+(\d{1,2})(?::(\d{2}))?\s*(a\.?\s*m\.?|p\.?\s*m\.?|am|pm|de\s+la\s+mañana|de\s+la\s+tarde|de\s+la\s+noche)?',
+      caseSensitive: false,
+    ).firstMatch(transcript);
+    if (match == null) return null;
+
+    final hourRaw = int.tryParse(match.group(1) ?? '');
+    final minute = int.tryParse(match.group(2) ?? '') ?? 0;
+    if (hourRaw == null) return null;
+
+    final hint = _parseMeridiem(match.group(3));
+    var hour = hint != null ? _applyHourHint(hourRaw, hint) : _inferClassHour(hourRaw);
+    var endHour = hour + 2;
+    if (endHour > 23) endHour = 23;
+
+    return _VoiceScheduleTimeRange(
+      startHour: hour,
+      startMinute: minute,
+      endHour: endHour,
+      endMinute: minute,
+      startIndex: match.start,
+      endIndex: match.end,
+    );
+  }
+
   _VoiceScheduleTimeRange _defaultTimeRange() {
     return const _VoiceScheduleTimeRange(
       startHour: 9,
@@ -175,7 +540,22 @@ class VoiceScheduleParser {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // End Date & Academic Periods ("hasta parciales", "todo el ciclo", "16 semanas")
+  // ---------------------------------------------------------------------------
+
   DateTime? _extractEndDate(String normalizedTranscript, DateTime reference) {
+    if (normalizedTranscript.contains('hasta parciales')) {
+      return reference.add(const Duration(days: 56));
+    }
+    if (normalizedTranscript.contains('hasta finales') ||
+        normalizedTranscript.contains('todo el ciclo') ||
+        normalizedTranscript.contains('todo el semestre') ||
+        normalizedTranscript.contains('16 semanas') ||
+        normalizedTranscript.contains('semestre completo')) {
+      return reference.add(const Duration(days: 112));
+    }
+
     final slashMatch = RegExp(
       r'hasta\s+(?:el\s+)?(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?',
     ).firstMatch(normalizedTranscript);
@@ -222,14 +602,31 @@ class VoiceScheduleParser {
     return null;
   }
 
+  // ---------------------------------------------------------------------------
+  // Title extraction
+  // ---------------------------------------------------------------------------
+
   String _extractTitle(String transcript, String normalizedTranscript) {
     final titlePatterns = <RegExp>[
       RegExp(
-        r'(?:mi\s+)?(?:clase|curso|laboratorio|lab|taller)\s+de\s+(.+?)(?=\s+(?:es|son|lunes|martes|miercoles|jueves|viernes|sabado|domingo|a\s+las))',
+        r'(?:mi\s+)?(?:clase|curso|laboratorio|lab|taller|materia|seminario|catedra|examen|prueba|parcial|final)\s+de\s+(.+?)(?=\s+(?:es|son|lunes|martes|miercoles|jueves|viernes|sabado|domingo|\d{1,2}\s+de|a\s+las|de\s+\d))',
         caseSensitive: false,
       ),
       RegExp(
-        r'(?:agrega|agenda|anota|pon)\s+(?:mi\s+)?(?:clase|curso|laboratorio|lab|taller)?\s*(.+?)(?=\s+(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo|a\s+las))',
+        r'(?:agrega|agenda|anota|pon|crea|programa|registra)\s+(?:mi\s+)?(?:clase|curso|laboratorio|lab|taller|materia|seminario|catedra|examen|prueba|parcial|final)?\s*(?:de\s+)?(.+?)(?=\s+(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo|\d{1,2}\s+de|a\s+las|de\s+\d))',
+        caseSensitive: false,
+      ),
+      RegExp(
+        r'(?:tengo|voy\s+a)\s+(?:clase\s+de\s+|la\s+clase\s+de\s+)?(.+?)(?=\s+(?:los\s+)?(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo|el\s+\d{1,2}|\d{1,2}\s+de|a\s+las|de\s+\d))',
+        caseSensitive: false,
+      ),
+      // Pattern for day BEFORE title, e.g. "martes Física de 10 a 12"
+      RegExp(
+        r'\b(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo)\s+(?:de\s+)?([A-Za-z0-9áéíóúñÁÉÍÓÚÑ\s]+?)(?=\s+(?:de\s+\d|\d{1,2}|en\s+|por\s+|$))',
+        caseSensitive: false,
+      ),
+      RegExp(
+        r'^(.+?)(?=\s+(?:los\s+)?(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo|el\s+\d{1,2}\s+de|\d{1,2}\s+de\s+enero|\d{1,2}\s+de\s+febrero|\d{1,2}\s+de\s+marzo|\d{1,2}\s+de\s+abril|\d{1,2}\s+de\s+mayo|\d{1,2}\s+de\s+junio|\d{1,2}\s+de\s+julio|\d{1,2}\s+de\s+agosto|\d{1,2}\s+de\s+septiembre|\d{1,2}\s+de\s+octubre|\d{1,2}\s+de\s+noviembre|\d{1,2}\s+de\s+diciembre)\b)',
         caseSensitive: false,
       ),
     ];
@@ -237,25 +634,16 @@ class VoiceScheduleParser {
     for (final pattern in titlePatterns) {
       final match = pattern.firstMatch(normalizedTranscript);
       if (match != null) {
-        final sourceMatch = RegExp(
-          RegExp.escape(match.group(1) ?? ''),
-          caseSensitive: false,
-        ).firstMatch(_normalizeForSearch(transcript));
         final candidate = match.group(1) ?? '';
-        final humanized = _humanize(candidate);
-        if (humanized.isNotEmpty) {
+        final humanized = _humanize(_cleanTitleCandidate(candidate));
+        if (humanized.isNotEmpty && humanized.length > 1) {
           return humanized;
-        }
-        if (sourceMatch != null) {
-          return transcript
-              .substring(sourceMatch.start, sourceMatch.end)
-              .trim();
         }
       }
     }
 
     final firstWeekdayIndex = RegExp(
-      r'\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b',
+      r'\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo|\d{1,2}\s+de\s+[a-z]+)\b',
     ).firstMatch(normalizedTranscript)?.start;
     final firstTimeIndex = RegExp(
       r'\b\d{1,2}(?::\d{2})?\b',
@@ -273,28 +661,62 @@ class VoiceScheduleParser {
     if (segment.contains(':')) {
       segment = segment.split(':').first.trim();
     }
-    segment = segment
-        .replaceFirst(
-          RegExp(r'^(?:agrega|agenda|anota|pon|crea)\s+', caseSensitive: false),
-          '',
-        )
-        .replaceFirst(
-          RegExp(
-            r'^(?:mi\s+)?(?:clase|curso|laboratorio|lab|taller)\s+de\s+',
-            caseSensitive: false,
-          ),
-          '',
-        )
-        .replaceFirst(RegExp(r'\s+(?:es|son)$', caseSensitive: false), '')
-        .trim();
+    segment = _cleanTitleCandidate(segment);
 
     return _humanize(segment);
   }
 
+  String _cleanTitleCandidate(String candidate) {
+    var result = candidate
+        .replaceFirst(
+          RegExp(
+            r'^(?:agrega|agenda|anota|pon|crea|programa|registra|tengo|voy\s+a)\s+',
+            caseSensitive: false,
+          ),
+          '',
+        )
+        .replaceFirst(
+          RegExp(
+            r'^(?:mi\s+)?(?:la\s+)?(?:clase|curso|laboratorio|lab|taller|materia|seminario|catedra)\s+de\s+',
+            caseSensitive: false,
+          ),
+          '',
+        )
+        .replaceFirst(
+          RegExp(
+            r'^(?:mi\s+)?(?:la\s+)?(?:clase|curso|laboratorio|lab|taller|materia|seminario|catedra)\s+',
+            caseSensitive: false,
+          ),
+          '',
+        )
+        .replaceFirst(RegExp(r'\s+(?:es|son|los|el|la|las)$', caseSensitive: false), '')
+        .replaceFirst(RegExp(r'\s+de$', caseSensitive: false), '')
+        .replaceFirst(RegExp(r'\s+a$', caseSensitive: false), '')
+        .trim();
+    result = result
+        .replaceFirst(RegExp(r'^\s*de\s+', caseSensitive: false), '')
+        .replaceFirst(RegExp(r'^\s*la\s+', caseSensitive: false), '')
+        .replaceFirst(RegExp(r'^\s*el\s+', caseSensitive: false), '')
+        .trim();
+    return result;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Location extraction
+  // ---------------------------------------------------------------------------
+
   String _extractLocation(String transcript, int? lowerBound) {
+    final onlineMatch = RegExp(
+      r'\b(por\s+zoom|en\s+zoom|en\s+teams|por\s+teams|en\s+meet|por\s+meet|virtual|online)\b',
+      caseSensitive: false,
+    ).firstMatch(transcript);
+    if (onlineMatch != null) {
+      return _humanize(onlineMatch.group(1) ?? 'Virtual');
+    }
+
     final matches =
         RegExp(
-          r'\ben\s+([^,.;]+?)(?=\s+hasta\b|$)',
+          r'\ben\s+(?:el\s+)?([^,.;]+?)(?=\s+hasta\b|$)',
           caseSensitive: false,
         ).allMatches(transcript).where((match) {
           if (lowerBound == null) return true;
@@ -307,7 +729,7 @@ class VoiceScheduleParser {
     }
 
     final directMatch = RegExp(
-      r'\b(aula|sal[oó]n|laboratorio|lab\.?)\s+([^\s,.;]+(?:\s+[^\s,.;]+)?)',
+      r'\b(aula|sal[oó]n|laboratorio|lab\.?|edificio|bloque|piso|torre)\s+([^\s,.;]+(?:\s+[^\s,.;]+)?)',
       caseSensitive: false,
     ).firstMatch(transcript);
     if (directMatch != null) {
@@ -318,6 +740,38 @@ class VoiceScheduleParser {
 
     return '';
   }
+
+  // ---------------------------------------------------------------------------
+  // Project & Conflict helpers
+  // ---------------------------------------------------------------------------
+
+  Project? _matchProject(String title, Iterable<Project> projects) {
+    if (title.isEmpty || projects.isEmpty) return null;
+    final normTitle = _normalizeForSearch(title);
+    for (final project in projects) {
+      final normProj = _normalizeForSearch(project.name);
+      if (normProj.isEmpty) continue;
+      if (normTitle.contains(normProj) || normProj.contains(normTitle)) {
+        return project;
+      }
+    }
+    return null;
+  }
+
+  bool _overlapsTime(DateTime aStart, DateTime aEnd, DateTime bStart, DateTime bEnd) {
+    final aStartMin = aStart.hour * 60 + aStart.minute;
+    final aEndMin = aEnd.hour * 60 + aEnd.minute;
+    final bStartMin = bStart.hour * 60 + bStart.minute;
+    final bEndMin = bEnd.hour * 60 + bEnd.minute;
+    return aStartMin < bEndMin && bStartMin < aEndMin;
+  }
+
+  String _formatTime(DateTime dt) =>
+      '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+
+  // ---------------------------------------------------------------------------
+  // Resolution helpers
+  // ---------------------------------------------------------------------------
 
   DateTime _resolveFirstOccurrence({
     required DateTime reference,
@@ -366,15 +820,9 @@ class VoiceScheduleParser {
   }
 
   int _applyHourHint(int rawHour, int? hint) {
-    if (hint == null) {
-      return rawHour;
-    }
-    if (hint == 12 && rawHour < 12) {
-      return rawHour + 12;
-    }
-    if (hint == 0 && rawHour == 12) {
-      return 0;
-    }
+    if (hint == null) return rawHour;
+    if (hint == 12 && rawHour < 12) return rawHour + 12;
+    if (hint == 0 && rawHour == 12) return 0;
     return rawHour;
   }
 
@@ -500,4 +948,11 @@ class _VoiceScheduleTimeRange {
     required this.startIndex,
     required this.endIndex,
   });
+}
+
+class _SpecificDateResult {
+  final DateTime date;
+  final String matchedText;
+
+  const _SpecificDateResult({required this.date, required this.matchedText});
 }

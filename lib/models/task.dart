@@ -30,14 +30,21 @@ class Task {
   final EnergyLevel energy;
   final TaskPriority priority;
   final String? description;
-  final String? attachmentPath;
+
+  /// Rutas de archivos locales o enlaces. El primer elemento mantiene
+  /// compatibilidad con el antiguo campo único `attachmentPath`.
+  final List<String> attachments;
   final List<String> labels;
   final List<Subtask> subtasks;
   final int? customReminderMinutes; // null = use global default
   final int timeSpentMinutes; // Total time spent on this task
   final List<PomodoroSession> pomodoroSessions; // History of Pomodoro sessions
 
-  const Task({
+  /// Compatibilidad: primer adjunto (o null si no hay).
+  String? get attachmentPath =>
+      attachments.isEmpty ? null : attachments.first;
+
+  Task({
     required this.id,
     required this.title,
     required this.projectId,
@@ -47,13 +54,16 @@ class Task {
     this.energy = EnergyLevel.medium,
     this.priority = TaskPriority.medium,
     this.description,
-    this.attachmentPath,
+    String? attachmentPath,
+    List<String>? attachments,
     this.labels = const [],
     this.subtasks = const [],
     this.customReminderMinutes,
     this.timeSpentMinutes = 0,
     this.pomodoroSessions = const [],
-  });
+  }) : attachments =
+           attachments ??
+           (attachmentPath != null ? [attachmentPath] : const <String>[]);
 
   Task copyWith({
     String? title,
@@ -65,12 +75,20 @@ class Task {
     TaskPriority? priority,
     String? description,
     String? attachmentPath,
+    List<String>? attachments,
     List<String>? labels,
     List<Subtask>? subtasks,
     int? customReminderMinutes,
     int? timeSpentMinutes,
     List<PomodoroSession>? pomodoroSessions,
   }) {
+    // Semántica legacy: si se pasa attachmentPath, reemplaza/agrega el adjunto.
+    List<String>? nextAttachments = attachments ?? this.attachments;
+    if (attachments == null && attachmentPath != null) {
+      nextAttachments = this.attachments.isEmpty
+          ? [attachmentPath]
+          : [attachmentPath, ...this.attachments.sublist(1)];
+    }
     return Task(
       id: id,
       title: title ?? this.title,
@@ -81,7 +99,7 @@ class Task {
       energy: energy ?? this.energy,
       priority: priority ?? this.priority,
       description: description ?? this.description,
-      attachmentPath: attachmentPath ?? this.attachmentPath,
+      attachments: nextAttachments,
       labels: labels ?? this.labels,
       subtasks: subtasks ?? this.subtasks,
       customReminderMinutes:
@@ -92,6 +110,12 @@ class Task {
   }
 
   factory Task.fromJson(Map<String, dynamic> json) {
+    final legacyAttachment = json['attachmentPath'] as String?;
+    final parsedAttachments =
+        (json['attachments'] as List<dynamic>?)
+                ?.whereType<String>()
+                .toList() ??
+            (legacyAttachment != null ? [legacyAttachment] : <String>[]);
     return Task(
       id: json['id'] as String,
       title: json['title'] as String,
@@ -106,7 +130,7 @@ class Task {
       energy: _energyFromString(json['energy'] as String?),
       priority: _priorityFromString(json['priority'] as String?),
       description: json['description'] as String?,
-      attachmentPath: json['attachmentPath'] as String?,
+      attachments: parsedAttachments,
       labels:
           (json['labels'] as List<dynamic>?)
               ?.whereType<String>()
@@ -140,6 +164,7 @@ class Task {
     'priority': priority.name,
     'description': description,
     'attachmentPath': attachmentPath,
+    'attachments': attachments,
     'labels': labels,
     'subtasks': subtasks.map((s) => s.toJson()).toList(),
     'customReminderMinutes': customReminderMinutes,

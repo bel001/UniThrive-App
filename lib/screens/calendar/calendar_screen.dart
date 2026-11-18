@@ -1,19 +1,24 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 
 import '../../models/schedule.dart';
+import '../../core/design_tokens.dart';
 import '../../services/calendar_sync_service.dart';
 import '../../services/voice_schedule_parser.dart';
 import '../../state/app_state.dart';
+import '../../utils/platform_capabilities.dart';
 import '../../widgets/empty_state_widget.dart';
 import '../../widgets/global_search_sheet.dart';
+import '../../widgets/progress_bar.dart';
+import '../../widgets/uni_card.dart';
 import '../../widgets/uni_primary_button.dart';
+import '../../widgets/uni_supervisual.dart';
 import '../../widgets/voice_schedule_sheet.dart';
 import '../alarms/alarm_screen.dart';
-
-const _calendarAccent = Color(0xFF9FCFBB); // verde menta para botones activos
-const _calendarAccentDark = Color(0xFF7FB5A0); // variante en modo oscuro
-const _chipBgLight = Color(0xFFF0FFF8); // fondo inactivo claro
-const _chipBgDark = Color(0xFF1A2E27); // fondo inactivo oscuro
 
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({super.key});
@@ -58,10 +63,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           IconButton(
             tooltip: 'Dictar horario',
             icon: const Icon(Icons.mic_rounded),
-            onPressed: () => showVoiceScheduleSheet(
-              context,
-              referenceDay: _selectedDay,
-            ),
+            onPressed: () => _openVoiceSchedule(context),
           ),
           PopupMenuButton<_CalendarAction>(
             icon: const Icon(Icons.more_vert_rounded),
@@ -135,13 +137,22 @@ class _CalendarScreenState extends State<CalendarScreen> {
         children: [
           Row(
             children: [
-              // Segmented Control
+              // Segmented Control estilo pill Vivid Academic Night.
               Expanded(
                 child: Container(
                   padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceContainer,
-                    borderRadius: BorderRadius.circular(16),
+                    color: isDark
+                        ? DesignTokens.cardDark
+                        : theme.colorScheme.surfaceContainer,
+                    borderRadius: BorderRadius.circular(
+                      DesignTokens.radiusLarge,
+                    ),
+                    border: Border.all(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.08)
+                          : theme.colorScheme.outlineVariant,
+                    ),
                   ),
                   child: Row(
                     children: [
@@ -171,22 +182,35 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 child: Material(
                   color: Colors.transparent,
                   child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(
+                      DesignTokens.radiusMedium,
+                    ),
                     onTap: () => setState(() => _hideWeekends = !_hideWeekends),
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                       decoration: BoxDecoration(
                         color: _hideWeekends
-                            ? theme.colorScheme.primaryContainer
-                            : theme.colorScheme.surfaceContainer,
-                        borderRadius: BorderRadius.circular(12),
+                            ? theme.colorScheme.primary
+                            : (isDark
+                                  ? DesignTokens.cardDark
+                                  : theme.colorScheme.surfaceContainer),
+                        borderRadius: BorderRadius.circular(
+                          DesignTokens.radiusMedium,
+                        ),
+                        border: Border.all(
+                          color: _hideWeekends
+                              ? DesignTokens.accentDeep
+                              : (isDark
+                                    ? Colors.white.withValues(alpha: 0.08)
+                                    : theme.colorScheme.outlineVariant),
+                        ),
                       ),
                       child: Icon(
                         _hideWeekends ? Icons.weekend : Icons.weekend_outlined,
                         size: 20,
                         color: _hideWeekends
-                            ? theme.colorScheme.primary
+                            ? Colors.white
                             : theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
@@ -216,16 +240,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
             color: isSelected
-                ? (isDark ? _calendarAccentDark : _calendarAccent)
+                ? theme.colorScheme.primary
                 : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(DesignTokens.radiusLarge),
+            border: Border.all(
+              color: isSelected
+                  ? DesignTokens.accentDeep
+                  : Colors.transparent,
+            ),
             boxShadow: isSelected
                 ? [
                     BoxShadow(
-                      color: (isDark ? _calendarAccentDark : _calendarAccent)
-                          .withValues(alpha: 0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
+                      color: theme.colorScheme.primary.withValues(alpha: 0.35),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
                     ),
                   ]
                 : null,
@@ -234,7 +262,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
             child: Text(
               label,
               style: theme.textTheme.labelLarge?.copyWith(
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
                 color: isSelected
                     ? Colors.white
                     : theme.colorScheme.onSurfaceVariant,
@@ -258,7 +286,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return ListView(
       padding: const EdgeInsets.only(bottom: 128),
       children: [
-        _buildDaySelector(),
+        _buildWeekLoadStrip(weekBlocks),
+        const SizedBox(height: 8),
+        _buildDaySelector(weekBlocks),
         const SizedBox(height: 12),
         if (normalized.isEmpty)
           Padding(
@@ -269,8 +299,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
               subtitle:
                   'Puedes dictar tu horario, pegar texto del syllabus o crear una clase manual desde el calendario.',
               buttonText: 'DICTAR HORARIO',
-              onButtonPressed: () =>
-                  showVoiceScheduleSheet(context, referenceDay: _selectedDay),
+              onButtonPressed: () => _openVoiceSchedule(context),
             ),
           )
         else
@@ -310,6 +339,207 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
+  /// Franja supervisual: carga de bloques por día de la semana visible.
+  /// Estilo Vivid Academic Night: card radio 24, barras compartidas,
+  /// barra de progreso con gloss y avisos de carga alta / día libre.
+  Widget _buildWeekLoadStrip(List<ScheduleBlock> weekBlocks) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final startOfWeek = DateTime(
+      _selectedDay.year,
+      _selectedDay.month,
+      _selectedDay.day,
+    ).subtract(Duration(days: _selectedDay.weekday - 1));
+    final counts = List.generate(7, (index) {
+      final day = startOfWeek.add(Duration(days: index));
+      return weekBlocks
+          .where(
+            (block) =>
+                block.start.year == day.year &&
+                block.start.month == day.month &&
+                block.start.day == day.day,
+          )
+          .length;
+    });
+    final total = counts.fold<int>(0, (sum, value) => sum + value);
+    final maxDay = counts.fold<int>(0, (max, value) => value > max ? value : max);
+    final heavyIndex = counts.indexWhere((value) => value >= 3);
+    final freeIndex = counts.indexWhere((value) => value == 0);
+    const dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: UniCard(
+        radius: DesignTokens.radiusLarge,
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary.withValues(alpha: 0.16),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.bar_chart_rounded,
+                    color: theme.colorScheme.primary,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Carga de la semana',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: DesignTokens.mint.withValues(
+                      alpha: isDark ? 0.16 : 0.22,
+                    ),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '$total bloques',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: isDark
+                          ? DesignTokens.mint
+                          : DesignTokens.success,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            UniMiniBarChart(
+              values: counts,
+              labels: UniMiniBarChart.weekLabels,
+              highlightLast: false,
+              height: 84,
+              semanticUnit: 'bloques',
+            ),
+            const SizedBox(height: 8),
+            ProgressBar(
+              value: total / 14.0,
+              fillColor: isDark
+                  ? DesignTokens.mintStrong
+                  : theme.colorScheme.primary,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              total == 0
+                  ? 'Semana despejada, sin bloques.'
+                  : 'Llevas $total bloques esta semana.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            if (heavyIndex >= 0) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? DesignTokens.errorContainerDark.withValues(alpha: 0.45)
+                      : theme.colorScheme.errorContainer.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(
+                    DesignTokens.radiusMedium,
+                  ),
+                  border: Border.all(
+                    color: theme.colorScheme.error.withValues(alpha: 0.35),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      color: isDark
+                          ? DesignTokens.errorDark
+                          : theme.colorScheme.error,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Carga alta el ${dayNames[heavyIndex]}',
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(
+                            'Tienes $maxDay bloques ese día. Conviene adelantar algo.',
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            if (freeIndex >= 0) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: DesignTokens.mint.withValues(alpha: isDark ? 0.10 : 0.18),
+                  borderRadius: BorderRadius.circular(
+                    DesignTokens.radiusMedium,
+                  ),
+                  border: Border.all(
+                    color: DesignTokens.mintStrong.withValues(alpha: 0.4),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.celebration_outlined,
+                      color: isDark
+                          ? DesignTokens.mint
+                          : DesignTokens.success,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Respiro el ${dayNames[freeIndex]}',
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(
+                            'Ese día está libre. Ideal para descansar o repasar.',
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   void _handleCalendarAction(_CalendarAction action, AppState appState) {
     switch (action) {
       case _CalendarAction.organize:
@@ -319,7 +549,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         showGlobalSearchSheet(context);
         break;
       case _CalendarAction.voice:
-        showVoiceScheduleSheet(context, referenceDay: _selectedDay);
+        _openVoiceSchedule(context);
         break;
       case _CalendarAction.sync:
         _openCalendarSync(context, appState);
@@ -334,20 +564,32 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
 
 
-  Widget _buildDaySelector() {
-    final weekDays = ['L', 'M', 'Mi', 'J', 'V', 'S', 'D'];
+  /// Selector de días estilo Vivid Academic Night: pills verticales de
+  /// 72x96 con radio 24 (día + número + dot). El día activo va en índigo.
+  Widget _buildDaySelector(List<ScheduleBlock> weekBlocks) {
+    const weekDays = ['L', 'M', 'Mi', 'J', 'V', 'S', 'D'];
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final selectedColor = isDark ? _calendarAccentDark : _calendarAccent;
-    final unselectedBg = isDark ? const Color(0xFF241A37) : _chipBgLight;
-    final unselectedBorder = isDark
-        ? const Color(0xFF3A2C52)
-        : const Color(0xFFE2E8F0);
+    final startOfWeek = DateTime(
+      _selectedDay.year,
+      _selectedDay.month,
+      _selectedDay.day,
+    ).subtract(Duration(days: _selectedDay.weekday - 1));
+    bool hasEvents(int weekday) {
+      final day = startOfWeek.add(Duration(days: weekday - 1));
+      return weekBlocks.any(
+        (block) =>
+            block.start.year == day.year &&
+            block.start.month == day.month &&
+            block.start.day == day.day,
+      );
+    }
+
     return SizedBox(
-      height: 70,
+      height: 104,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         itemCount: weekDays.length,
         itemBuilder: (context, index) {
           final weekday = index + 1;
@@ -359,51 +601,85 @@ class _CalendarScreenState extends State<CalendarScreen> {
             Duration(days: weekday - _selectedDay.weekday),
           );
           final isSelected = _isSameDay(day, _selectedDay);
+          final dot = hasEvents(weekday);
           return GestureDetector(
             onTap: () => setState(() {
               _selectedDay = day;
               _focusedMonth = DateTime(day.year, day.month);
             }),
-            child: Container(
-              width: 56,
-              margin: const EdgeInsets.symmetric(horizontal: 6),
-              decoration: BoxDecoration(
-                color: isSelected ? selectedColor : unselectedBg,
-                borderRadius: BorderRadius.circular(22),
-                border: Border.all(
-                  color: isSelected ? Colors.transparent : unselectedBorder,
+            child: Semantics(
+              label: '${weekDays[index]} ${day.day}',
+              selected: isSelected,
+              button: true,
+              child: Container(
+                width: 72,
+                height: 96,
+                margin: const EdgeInsets.symmetric(horizontal: 6),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? theme.colorScheme.primary
+                      : (isDark
+                            ? DesignTokens.cardDark
+                            : theme.colorScheme.surfaceContainerLow),
+                  borderRadius: BorderRadius.circular(
+                    DesignTokens.radiusLarge,
+                  ),
+                  border: Border.all(
+                    color: isSelected
+                        ? DesignTokens.accentDeep
+                        : (isDark
+                              ? Colors.white.withValues(alpha: 0.08)
+                              : theme.colorScheme.outlineVariant),
+                  ),
+                  boxShadow: isSelected
+                      ? [
+                          BoxShadow(
+                            color: theme.colorScheme.primary.withValues(
+                              alpha: 0.4,
+                            ),
+                            blurRadius: 16,
+                            offset: const Offset(0, 8),
+                          ),
+                        ]
+                      : null,
                 ),
-                boxShadow: isSelected
-                    ? [
-                        BoxShadow(
-                          color: selectedColor.withValues(alpha: 0.45),
-                          blurRadius: 16,
-                          offset: const Offset(0, 10),
-                        ),
-                      ]
-                    : null,
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    weekDays[index],
-                    style: TextStyle(
-                      color: isSelected
-                          ? Colors.white
-                          : (isDark ? Colors.white70 : const Color(0xFF475569)),
-                      fontWeight: FontWeight.bold,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      weekDays[index],
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: isSelected
+                            ? Colors.white.withValues(alpha: 0.85)
+                            : theme.colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
-                  Text(
-                    '${day.day}',
-                    style: TextStyle(
-                      color: isSelected
-                          ? Colors.white
-                          : (isDark ? Colors.white54 : const Color(0xFF94A3B8)),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${day.day}',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        color: isSelected
+                            ? Colors.white
+                            : theme.colorScheme.onSurface,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 6),
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: !dot
+                            ? Colors.transparent
+                            : isSelected
+                            ? DesignTokens.mint
+                            : theme.colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           );
@@ -415,6 +691,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Widget _buildMonthGrid(List<ScheduleBlock> allBlocks) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final firstDay = DateTime(_focusedMonth.year, _focusedMonth.month, 1);
     final daysInMonth = DateTime(
       _focusedMonth.year,
@@ -449,7 +726,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
               ),
               Text(
                 _monthTitle(_focusedMonth),
-                style: theme.textTheme.titleMedium,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: isDark
+                      ? DesignTokens.lilac
+                      : theme.colorScheme.primary,
+                ),
               ),
               IconButton(
                 onPressed: () => setState(
@@ -491,13 +773,21 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   duration: const Duration(milliseconds: 200),
                   decoration: BoxDecoration(
                     color: isSelected
-                        ? theme.colorScheme.primary.withValues(alpha: 0.1)
-                        : theme.cardColor,
-                    borderRadius: BorderRadius.circular(14),
+                        ? theme.colorScheme.primary.withValues(
+                            alpha: isDark ? 0.28 : 0.14,
+                          )
+                        : (isDark
+                              ? DesignTokens.cardDark
+                              : theme.colorScheme.surfaceContainerLow),
+                    borderRadius: BorderRadius.circular(
+                      DesignTokens.radiusMedium,
+                    ),
                     border: Border.all(
                       color: isSelected
                           ? theme.colorScheme.primary
-                          : theme.dividerColor.withValues(alpha: 0.2),
+                          : (isDark
+                                ? Colors.white.withValues(alpha: 0.08)
+                                : theme.dividerColor.withValues(alpha: 0.2)),
                     ),
                   ),
                   padding: const EdgeInsets.symmetric(
@@ -677,61 +967,162 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
     await showModalBottomSheet<void>(
       context: context,
+      backgroundColor: Colors.transparent,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       builder: (sheetContext) {
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 36,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 12),
-                decoration: BoxDecoration(
-                  color: Colors.grey.withValues(alpha: 0.4),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              Text(
-                'Agenda del ${day.day}/${day.month}',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 18,
-                ),
-              ),
-              const SizedBox(height: 12),
-              ...events.map(
-                (event) => ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: CircleAvatar(
-                    backgroundColor: event.color,
-                    child: Text(
-                      event.start.hour.toString().padLeft(2, '0'),
-                      style: const TextStyle(color: Colors.white, fontSize: 12),
+        final sheetTheme = Theme.of(sheetContext);
+        final sheetDark = sheetTheme.brightness == Brightness.dark;
+        return Container(
+          decoration: BoxDecoration(
+            color: sheetDark
+                ? DesignTokens.cardDark
+                : sheetTheme.colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(28),
+            ),
+            border: Border.all(
+              color: sheetDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : sheetTheme.colorScheme.outlineVariant,
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: sheetTheme.colorScheme.onSurfaceVariant.withValues(
+                        alpha: 0.4,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  title: Text(event.title),
-                  subtitle: Text(
-                    '${_timeWindowLabel(event)} · ${event.location}',
+                ),
+                // Hero estilo detalle de clase: chip + título en lila.
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: sheetTheme.colorScheme.primary.withValues(
+                      alpha: 0.16,
+                    ),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '${events.length} bloque${events.length == 1 ? '' : 's'}',
+                    style: sheetTheme.textTheme.labelMedium?.copyWith(
+                      color: sheetDark
+                          ? DesignTokens.lilac
+                          : sheetTheme.colorScheme.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              FilledButton(
-                onPressed: () {
-                  setState(() {
-                    _selectedDay = day;
-                    _monthlyView = false;
-                  });
-                  Navigator.of(sheetContext).pop();
-                },
-                child: const Text('Ver día completo'),
-              ),
-            ],
+                const SizedBox(height: 8),
+                Text(
+                  'Agenda del ${day.day}/${day.month}',
+                  style: sheetTheme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: sheetDark
+                        ? DesignTokens.lilac
+                        : sheetTheme.colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ...events.map(
+                  (event) => Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: sheetDark
+                          ? DesignTokens.cardDarkAlt
+                          : sheetTheme.colorScheme.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(
+                        DesignTokens.radiusMedium,
+                      ),
+                      border: Border.all(
+                        color: sheetDark
+                            ? Colors.white.withValues(alpha: 0.08)
+                            : sheetTheme.colorScheme.outlineVariant,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: event.color.withValues(alpha: 0.22),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            event.start.hour.toString().padLeft(2, '0'),
+                            style: sheetTheme.textTheme.labelLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                event.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: sheetTheme.textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              Text(
+                                '${_timeWindowLabel(event)} · ${event.location}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: sheetTheme.textTheme.bodySmall?.copyWith(
+                                  color: sheetTheme
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          color: sheetTheme.colorScheme.onSurfaceVariant,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                UniPrimaryButton(
+                  label: 'Ver día completo',
+                  onPressed: () {
+                    setState(() {
+                      _selectedDay = day;
+                      _monthlyView = false;
+                    });
+                    Navigator.of(sheetContext).pop();
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
           ),
         );
       },
@@ -899,47 +1290,109 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Future<void> _promptImportIcs(BuildContext context, AppState appState) async {
-    final controller = TextEditingController();
-    final confirmed = await showDialog<bool>(
+    final source = await showModalBottomSheet<String>(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Pegar contenido .ics'),
-          content: TextField(
-            controller: controller,
-            maxLines: 8,
-            decoration: const InputDecoration(
-              hintText: 'Pega aquí el contenido del archivo .ics',
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.folder_open_rounded),
+              title: const Text('Elegir archivo .ics'),
+              subtitle: const Text('Selecciona el archivo exportado'),
+              onTap: () => Navigator.of(sheetContext).pop('file'),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('Importar'),
+            ListTile(
+              leading: const Icon(Icons.notes_rounded),
+              title: const Text('Pegar contenido'),
+              subtitle: const Text('Copia y pega el texto del calendario'),
+              onTap: () => Navigator.of(sheetContext).pop('paste'),
             ),
           ],
-        );
-      },
-    );
-    if (confirmed == true && controller.text.trim().isNotEmpty) {
-      final imported = await CalendarSyncService.importIcs(
-        controller.text,
-        appState,
-      );
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            imported == 0
-                ? 'No se detectaron eventos.'
-                : 'Importados $imported eventos.',
-          ),
         ),
+      ),
+    );
+    if (source == null || !context.mounted) return;
+
+    String? content;
+    if (source == 'file') {
+      content = await _pickIcsFileContent();
+      if (!context.mounted) return;
+      if (content == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se seleccionó ningún archivo .ics.')),
+        );
+        return;
+      }
+    } else {
+      final controller = TextEditingController();
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: const Text('Pegar contenido .ics'),
+            content: TextField(
+              controller: controller,
+              maxLines: 8,
+              decoration: const InputDecoration(
+                hintText: 'Pega aquí el contenido del archivo .ics',
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('Importar'),
+              ),
+            ],
+          );
+        },
       );
+      if (confirmed == true && controller.text.trim().isNotEmpty) {
+        content = controller.text;
+      }
+      if (!context.mounted) return;
+    }
+
+    if (content == null || content.trim().isEmpty) return;
+    final imported = await CalendarSyncService.importIcs(content, appState);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          imported == 0
+              ? 'No se detectaron eventos.'
+              : 'Importados $imported eventos.',
+        ),
+      ),
+    );
+  }
+
+  Future<String?> _pickIcsFileContent() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['ics'],
+        withData: true,
+      );
+      final file = result?.files.single;
+      if (file == null) return null;
+      if (file.bytes != null && file.bytes!.isNotEmpty) {
+        return utf8.decode(file.bytes!, allowMalformed: true);
+      }
+      final path = file.path;
+      if (path != null && path.isNotEmpty) {
+        return File(path).readAsString();
+      }
+      return null;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -1058,89 +1511,128 @@ class _CalendarScreenState extends State<CalendarScreen> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Theme.of(context).brightness == Brightness.dark
-          ? const Color(0xFF0F0C1F)
-          : Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-      ),
+      backgroundColor: Colors.transparent,
       builder: (context) {
         final theme = Theme.of(context);
         final isDarkSheet = theme.brightness == Brightness.dark;
-        final fieldFill = isDarkSheet ? const Color(0xFF1E1B35) : Colors.white;
+        final fieldFill = isDarkSheet
+            ? DesignTokens.cardDarkAlt
+            : theme.colorScheme.surfaceContainerLow;
         final borderColor = isDarkSheet
-            ? const Color(0xFF3C3355)
-            : const Color(0xFFE2E8F0);
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 24,
-            right: 24,
-            top: 24,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-          ),
-          child: StatefulBuilder(
-            builder: (context, setSheetState) {
-              return SingleChildScrollView(
+            ? DesignTokens.surfaceVariantDark
+            : theme.colorScheme.outlineVariant;
+        return ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+            child: Material(
+              color: isDarkSheet
+                  ? DesignTokens.backgroundDark
+                  : theme.colorScheme.surface,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(32),
+              ),
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    left: 24,
+                    right: 24,
+                    top: 24,
+                    bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+                  ),
+                  child: StatefulBuilder(
+                    builder: (context, setSheetState) {
+                      return SingleChildScrollView(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      isEditing ? 'Editar clase' : 'Agregar clase',
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            isEditing ? 'Editar clase' : 'Nuevo evento',
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: isDarkSheet
+                                  ? DesignTokens.lilac
+                                  : theme.colorScheme.primary,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Cerrar',
+                          icon: const Icon(Icons.close_rounded),
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 14),
                     _LabeledField(
-                      label: 'Nombre de la clase',
+                      label: 'Título del evento',
                       controller: nameController,
                       hint: 'Ej. Álgebra Lineal',
+                      icon: Icons.edit_outlined,
                       fillColor: fieldFill,
                       borderColor: borderColor,
                     ),
                     const SizedBox(height: 12),
                     _LabeledField(
-                      label: 'Profesor / Lugar',
+                      label: 'Ubicación o enlace',
                       controller: locationController,
-                      hint: 'Ej. Dr. Alan Turing',
+                      hint: 'Ej. Edificio B, Aula 101',
+                      icon: Icons.location_on_outlined,
                       fillColor: fieldFill,
                       borderColor: borderColor,
                     ),
                     const SizedBox(height: 16),
-                    InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: 'Categoría',
-                        border: OutlineInputBorder(),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<ScheduleCategory>(
-                          value: sheetCategory,
-                          isExpanded: true,
-                          onChanged: (value) => setSheetState(() {
-                            sheetCategory = value ?? sheetCategory;
-                          }),
-                          items: const [
-                            DropdownMenuItem(
-                              value: ScheduleCategory.classSession,
-                              child: Text('Clase'),
-                            ),
-                            DropdownMenuItem(
-                              value: ScheduleCategory.task,
-                              child: Text('Tarea'),
-                            ),
-                            DropdownMenuItem(
-                              value: ScheduleCategory.project,
-                              child: Text('Proyecto / Enfoque'),
-                            ),
-                            DropdownMenuItem(
-                              value: ScheduleCategory.event,
-                              child: Text('Evento'),
-                            ),
-                          ],
-                        ),
+                    Text(
+                      'Categoría',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        _CategoryRadioCard(
+                          label: 'Clase',
+                          icon: Icons.school_outlined,
+                          selected:
+                              sheetCategory == ScheduleCategory.classSession,
+                          onTap: () => setSheetState(
+                            () => sheetCategory = ScheduleCategory.classSession,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        _CategoryRadioCard(
+                          label: 'Estudio',
+                          icon: Icons.menu_book_outlined,
+                          selected: sheetCategory == ScheduleCategory.task,
+                          onTap: () => setSheetState(
+                            () => sheetCategory = ScheduleCategory.task,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        _CategoryRadioCard(
+                          label: 'Social',
+                          icon: Icons.group_outlined,
+                          selected: sheetCategory == ScheduleCategory.event,
+                          onTap: () => setSheetState(
+                            () => sheetCategory = ScheduleCategory.event,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (sheetCategory == ScheduleCategory.project) ...[
+                      const SizedBox(height: 8),
+                      _CategoryRadioCard(
+                        label: 'Proyecto / Enfoque',
+                        icon: Icons.hotel_class_outlined,
+                        selected: true,
+                        onTap: () {},
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     Text(isEditing ? 'Día' : 'Días'),
                     const SizedBox(height: 8),
@@ -1167,20 +1659,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          selectedColor: isDarkSheet
-                              ? _calendarAccentDark
-                              : _calendarAccent,
+                          selectedColor: theme.colorScheme.primary,
                           backgroundColor: isDarkSheet
-                              ? _chipBgDark
-                              : _chipBgLight,
+                              ? DesignTokens.cardDarkAlt
+                              : theme.colorScheme.surfaceContainerLow,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
                             side: BorderSide(
                               color: active
-                                  ? Colors.transparent
+                                  ? DesignTokens.accentDeep
                                   : (isDarkSheet
-                                        ? const Color(0xFF3C3355)
-                                        : const Color(0xFFE2E8F0)),
+                                        ? DesignTokens.surfaceVariantDark
+                                        : theme.colorScheme.outlineVariant),
                             ),
                           ),
                           onSelected: (_) => setSheetState(() {
@@ -1207,8 +1697,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     ),
                     const SizedBox(height: 16),
                     // Recurrence selector
-                    if (!isEditing)
-                      ListTile(
+                    Material(
+                      color: Colors.transparent,
+                      child: ListTile(
                         contentPadding: EdgeInsets.zero,
                         leading: Icon(
                           Icons.repeat,
@@ -1253,7 +1744,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           }
                         },
                       ),
-                    if (!isEditing) const SizedBox(height: 8),
+                    ),
+                    const SizedBox(height: 8),
                     Row(
                       children: [
                         Expanded(
@@ -1307,7 +1799,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: UniPrimaryButton(
-                            label: 'Guardar',
+                            label: 'Guardar evento',
+                            icon: Icons.check_circle_outline_rounded,
                             onPressed: () {
                               final title = nameController.text.trim();
                               if (title.isEmpty) return;
@@ -1356,7 +1849,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                       ? (effectiveDays.length > 1
                                             ? RecurrenceType.custom
                                             : RecurrenceType.weekly)
-                                      : editingBlock.recurrence,
+                                      : selectedRecurrence,
+                                  recurrenceEndDate: recurrenceEndDate,
+                                  clearRecurrenceEndDate:
+                                      recurrenceEndDate == null,
+                                  recurrenceInterval: editingCustomSeries
+                                      ? 1
+                                      : recurrenceInterval,
                                   customWeekDays: editingCustomSeries
                                       ? (effectiveDays.toList()..sort())
                                       : editingBlock.customWeekDays,
@@ -1403,7 +1902,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   ],
                 ),
               );
-            },
+                    },
+                  ),
+                ),
+              ),
+            ),
           ),
         );
       },
@@ -1413,6 +1916,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
   DateTime _dateForWeekday(int weekday, {DateTime? reference}) {
     final base = reference ?? _selectedDay;
     return base.add(Duration(days: weekday - base.weekday));
+  }
+
+  void _openVoiceSchedule(BuildContext context) {
+    if (!PlatformCapabilities.supportsVoiceInput) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('El dictado por voz está disponible en Android e iOS.'),
+        ),
+      );
+      return;
+    }
+    showVoiceScheduleSheet(context, referenceDay: _selectedDay);
   }
 
   Future<void> _rescheduleBlock(ScheduleBlock block) async {
@@ -1474,103 +1989,142 @@ class _ScheduleCard extends StatelessWidget {
         '${block.end.hour.toString().padLeft(2, '0')}:${block.end.minute.toString().padLeft(2, '0')}';
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final cardColor = Color.alphaBlend(
-      block.color.withValues(alpha: isDark ? 0.30 : 0.15),
-      isDark ? const Color(0xFF161126) : Colors.white,
-    );
     final hasConflict = conflictColor != null;
-    return GestureDetector(
-      onTap: onEdit,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 8),
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: cardColor,
-          borderRadius: BorderRadius.circular(28),
-          border: Border.all(
-            color: block.color.withValues(alpha: isDark ? 0.5 : 0.2),
-          ),
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 7),
+      decoration: BoxDecoration(
+        color: isDark
+            ? DesignTokens.cardDark
+            : theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(DesignTokens.radiusLarge),
+        border: Border.all(
+          color: hasConflict
+              ? (conflictColor ?? theme.colorScheme.error)
+              : (isDark
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : theme.colorScheme.outlineVariant),
         ),
-        child: IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (hasConflict)
+        boxShadow: isDark
+            ? DesignTokens.cardShadowDark(0.14)
+            : DesignTokens.cardShadow,
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(DesignTokens.radiusLarge),
+          onTap: onEdit,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                if (hasConflict)
+                  Container(
+                    width: 6,
+                    constraints: const BoxConstraints(minHeight: 76),
+                    margin: const EdgeInsets.only(right: 12),
+                    decoration: BoxDecoration(
+                      color: conflictColor,
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                  ),
                 Container(
                   width: 6,
+                  constraints: const BoxConstraints(minHeight: 76),
                   margin: const EdgeInsets.only(right: 12),
                   decoration: BoxDecoration(
-                    color: conflictColor,
+                    color: block.color,
                     borderRadius: BorderRadius.circular(18),
                   ),
                 ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    time,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? Colors.white : const Color(0xFF0F172A),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    end,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: isDark ? Colors.white70 : const Color(0xFF475569),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      block.title,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: isDark ? Colors.white : const Color(0xFF111827),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      block.location,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: isDark
-                            ? Colors.white70
-                            : theme.textTheme.bodyMedium?.color,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Chip(
-                      label: Text(
-                        _categoryLabel(block.category),
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: isDark ? Colors.white : block.color,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Chip de hora estilo bento.
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primary.withValues(
+                            alpha: isDark ? 0.22 : 0.12,
+                          ),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          '$time – $end',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: isDark
+                                ? DesignTokens.lilac
+                                : theme.colorScheme.primary,
+                          ),
                         ),
                       ),
-                      backgroundColor: block.color.withValues(alpha: 0.25),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      Text(
+                        block.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.location_on_outlined,
+                            size: 16,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              block.location,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: block.color.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          _categoryLabel(block.category),
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: isDark ? Colors.white : block.color,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              IconButton(
-                icon: Icon(
-                  Icons.more_vert,
-                  color: isDark ? Colors.white70 : theme.iconTheme.color,
+                IconButton(
+                  icon: Icon(
+                    Icons.chevron_right_rounded,
+                    color: theme.colorScheme.onSurfaceVariant,
+                    size: 28,
+                  ),
+                  tooltip: 'Opciones',
+                  onPressed: () => _showBlockActions(context),
                 ),
-                onPressed: () => _showBlockActions(context),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -1580,59 +2134,143 @@ class _ScheduleCard extends StatelessWidget {
   void _showBlockActions(BuildContext context) {
     showModalBottomSheet<void>(
       context: context,
+      backgroundColor: Colors.transparent,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (sheetContext) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.edit_outlined),
-                title: const Text('Editar clase'),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  onEdit();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.schedule_outlined),
-                title: const Text('Reprogramar'),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  onReschedule();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.copy_all_rounded),
-                title: const Text('Duplicar la próxima semana'),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  onDuplicate();
-                },
-              ),
-              if (onAdjustDuration != null)
-                ListTile(
-                  leading: const Icon(Icons.timer_outlined),
-                  title: const Text('Cambiar duración'),
-                  onTap: () {
-                    Navigator.of(sheetContext).pop();
-                    onAdjustDuration?.call();
-                  },
+        final sheetTheme = Theme.of(sheetContext);
+        final sheetDark = sheetTheme.brightness == Brightness.dark;
+        Widget actionTile({
+          required IconData icon,
+          required String title,
+          required VoidCallback onTap,
+          Color? iconColor,
+          Color? titleColor,
+        }) {
+          return ListTile(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(DesignTokens.radiusMedium),
+            ),
+            leading: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: (iconColor ?? sheetTheme.colorScheme.primary).withValues(
+                  alpha: 0.14,
                 ),
-              ListTile(
-                leading: const Icon(Icons.delete_outline, color: Colors.red),
-                title: const Text(
-                  'Eliminar',
-                  style: TextStyle(color: Colors.red),
-                ),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  onDelete();
-                },
+                shape: BoxShape.circle,
               ),
-            ],
+              child: Icon(icon, color: iconColor ?? sheetTheme.colorScheme.primary),
+            ),
+            title: Text(
+              title,
+              style: sheetTheme.textTheme.bodyLarge?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: titleColor,
+              ),
+            ),
+            trailing: Icon(
+              Icons.chevron_right_rounded,
+              color: sheetTheme.colorScheme.onSurfaceVariant,
+            ),
+            onTap: onTap,
+          );
+        }
+
+        return Container(
+          decoration: BoxDecoration(
+            color: sheetDark
+                ? DesignTokens.cardDark
+                : sheetTheme.colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(28),
+            ),
+            border: Border.all(
+              color: sheetDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : sheetTheme.colorScheme.outlineVariant,
+            ),
+          ),
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 8),
+                      decoration: BoxDecoration(
+                        color: sheetTheme.colorScheme.onSurfaceVariant
+                            .withValues(alpha: 0.4),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                    child: Text(
+                      block.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: sheetTheme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: sheetDark
+                            ? DesignTokens.lilac
+                            : sheetTheme.colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                  actionTile(
+                    icon: Icons.edit_outlined,
+                    title: 'Editar clase',
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      onEdit();
+                    },
+                  ),
+                  actionTile(
+                    icon: Icons.schedule_outlined,
+                    title: 'Reprogramar',
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      onReschedule();
+                    },
+                  ),
+                  actionTile(
+                    icon: Icons.copy_all_rounded,
+                    title: 'Duplicar la próxima semana',
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      onDuplicate();
+                    },
+                  ),
+                  if (onAdjustDuration != null)
+                    actionTile(
+                      icon: Icons.timer_outlined,
+                      title: 'Cambiar duración',
+                      onTap: () {
+                        Navigator.of(sheetContext).pop();
+                        onAdjustDuration?.call();
+                      },
+                    ),
+                  actionTile(
+                    icon: Icons.delete_outline,
+                    title: 'Eliminar',
+                    iconColor: sheetTheme.colorScheme.error,
+                    titleColor: sheetTheme.colorScheme.error,
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      onDelete();
+                    },
+                  ),
+                ],
+              ),
+            ),
           ),
         );
       },
@@ -1682,77 +2320,176 @@ Future<Map<String, dynamic>?> _showRecurrenceOptions(
 ) async {
   return showModalBottomSheet<Map<String, dynamic>>(
     context: context,
-    backgroundColor: isDark ? const Color(0xFF0F0C1F) : Colors.white,
+    backgroundColor: Colors.transparent,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
     ),
     builder: (context) {
+      final sheetTheme = Theme.of(context);
+      final sheetDark = sheetTheme.brightness == Brightness.dark;
       RecurrenceType selectedType = currentType;
+      int selectedInterval =
+          currentInterval > 1 ? currentInterval : 1;
+      Map<String, dynamic> buildResult() => {
+        'type': selectedType,
+        'interval':
+            selectedType == RecurrenceType.daily ||
+                selectedType == RecurrenceType.weekly ||
+                selectedType == RecurrenceType.monthly
+            ? selectedInterval
+            : 1,
+      };
+      bool isPeriodic(RecurrenceType type) =>
+          type == RecurrenceType.daily ||
+          type == RecurrenceType.weekly ||
+          type == RecurrenceType.monthly;
+
       return StatefulBuilder(
         builder: (context, setState) {
-          return Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Repetir',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+          String unitLabel() {
+            switch (selectedType) {
+              case RecurrenceType.daily:
+                return selectedInterval == 1 ? 'día' : 'días';
+              case RecurrenceType.weekly:
+                return selectedInterval == 1 ? 'semana' : 'semanas';
+              default:
+                return selectedInterval == 1 ? 'mes' : 'meses';
+            }
+          }
+
+          return SafeArea(
+            top: false,
+            child: Container(
+              decoration: BoxDecoration(
+                color: sheetDark
+                    ? DesignTokens.cardDark
+                    : sheetTheme.colorScheme.surface,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(28),
                 ),
-                const SizedBox(height: 16),
-                _RecurrenceOption(
-                  label: 'No se repite',
-                  selected: selectedType == RecurrenceType.none,
-                  onTap: () {
-                    Navigator.pop(context, {
-                      'type': RecurrenceType.none,
-                      'interval': 1,
-                    });
-                  },
+                border: Border.all(
+                  color: sheetDark
+                      ? Colors.white.withValues(alpha: 0.08)
+                      : sheetTheme.colorScheme.outlineVariant,
                 ),
-                _RecurrenceOption(
-                  label: 'Todos los días',
-                  selected: selectedType == RecurrenceType.daily,
-                  onTap: () {
-                    Navigator.pop(context, {
-                      'type': RecurrenceType.daily,
-                      'interval': 1,
-                    });
-                  },
+              ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: sheetTheme.colorScheme.onSurfaceVariant
+                              .withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                    Text(
+                      'Repetir',
+                      style: sheetTheme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: sheetDark
+                            ? DesignTokens.lilac
+                            : sheetTheme.colorScheme.primary,
+                      ),
+                    ),
+                  const SizedBox(height: 16),
+                  _RecurrenceOption(
+                    label: 'No se repite',
+                    selected: selectedType == RecurrenceType.none,
+                    onTap: () {
+                      Navigator.pop(context, {
+                        'type': RecurrenceType.none,
+                        'interval': 1,
+                      });
+                    },
+                  ),
+                  _RecurrenceOption(
+                    label: 'Todos los días',
+                    selected: selectedType == RecurrenceType.daily,
+                    onTap: () {
+                      setState(() => selectedType = RecurrenceType.daily);
+                    },
+                  ),
+                  _RecurrenceOption(
+                    label: 'Todas las semanas',
+                    selected: selectedType == RecurrenceType.weekly,
+                    onTap: () {
+                      setState(() => selectedType = RecurrenceType.weekly);
+                    },
+                  ),
+                  _RecurrenceOption(
+                    label: 'Todos los meses',
+                    selected: selectedType == RecurrenceType.monthly,
+                    onTap: () {
+                      setState(() => selectedType = RecurrenceType.monthly);
+                    },
+                  ),
+                  _RecurrenceOption(
+                    label: 'Todos los años',
+                    selected: selectedType == RecurrenceType.yearly,
+                    onTap: () {
+                      Navigator.pop(context, {
+                        'type': RecurrenceType.yearly,
+                        'interval': 1,
+                      });
+                    },
+                  ),
+                  if (isPeriodic(selectedType)) ...[
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton.filledTonal(
+                          onPressed: selectedInterval > 1
+                              ? () => setState(
+                                  () => selectedInterval -= 1,
+                                )
+                              : null,
+                          icon: const Icon(Icons.remove_rounded),
+                          tooltip: 'Menos',
+                        ),
+                        const SizedBox(width: 16),
+                        Text(
+                          'Cada $selectedInterval ${unitLabel()}',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: isDark
+                                ? Colors.white
+                                : const Color(0xFF0F172A),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        IconButton.filledTonal(
+                          onPressed: selectedInterval < 30
+                              ? () => setState(
+                                  () => selectedInterval += 1,
+                                )
+                              : null,
+                          icon: const Icon(Icons.add_rounded),
+                          tooltip: 'Más',
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                    const SizedBox(height: 12),
+                    UniPrimaryButton(
+                      label: 'Listo',
+                      onPressed: () => Navigator.pop(context, buildResult()),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                 ),
-                _RecurrenceOption(
-                  label: 'Todas las semanas',
-                  selected: selectedType == RecurrenceType.weekly,
-                  onTap: () {
-                    Navigator.pop(context, {
-                      'type': RecurrenceType.weekly,
-                      'interval': 1,
-                    });
-                  },
-                ),
-                _RecurrenceOption(
-                  label: 'Todos los meses',
-                  selected: selectedType == RecurrenceType.monthly,
-                  onTap: () {
-                    Navigator.pop(context, {
-                      'type': RecurrenceType.monthly,
-                      'interval': 1,
-                    });
-                  },
-                ),
-                _RecurrenceOption(
-                  label: 'Todos los años',
-                  selected: selectedType == RecurrenceType.yearly,
-                  onTap: () {
-                    Navigator.pop(context, {
-                      'type': RecurrenceType.yearly,
-                      'interval': 1,
-                    });
-                  },
-                ),
-                const SizedBox(height: 24),
-              ],
+              ),
             ),
           );
         },
@@ -1765,12 +2502,14 @@ class _LabeledField extends StatelessWidget {
   final String label;
   final TextEditingController controller;
   final String hint;
+  final IconData? icon;
   final Color? fillColor;
   final Color? borderColor;
   const _LabeledField({
     required this.label,
     required this.controller,
     required this.hint,
+    this.icon,
     this.fillColor,
     this.borderColor,
   });
@@ -1780,10 +2519,15 @@ class _LabeledField extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final resolvedFill =
-        fillColor ?? (isDark ? const Color(0xFF1E1B35) : Colors.white);
+        fillColor ??
+        (isDark
+            ? DesignTokens.cardDarkAlt
+            : theme.colorScheme.surfaceContainerLow);
     final resolvedBorder =
         borderColor ??
-        (isDark ? const Color(0xFF3C3355) : const Color(0xFFE2E8F0));
+        (isDark
+            ? DesignTokens.surfaceVariantDark
+            : theme.colorScheme.outlineVariant);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1804,17 +2548,93 @@ class _LabeledField extends StatelessWidget {
             ),
             filled: true,
             fillColor: resolvedFill,
+            prefixIcon: icon == null
+                ? null
+                : Icon(icon, color: theme.colorScheme.primary),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(DesignTokens.radiusLarge),
               borderSide: BorderSide(color: resolvedBorder),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(18),
-              borderSide: BorderSide(color: theme.colorScheme.primary),
+              borderRadius: BorderRadius.circular(DesignTokens.radiusLarge),
+              borderSide: BorderSide(
+                color: theme.colorScheme.primary,
+                width: 2,
+              ),
             ),
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Radio-card de categoría estilo Nuevo Evento (mockup vivid academic):
+/// icono + etiqueta, seleccionada en índigo con borde profundo.
+class _CategoryRadioCard extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _CategoryRadioCard({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+          decoration: BoxDecoration(
+            color: selected
+                ? theme.colorScheme.primary
+                : (isDark
+                      ? DesignTokens.cardDarkAlt
+                      : theme.colorScheme.surfaceContainerLow),
+            borderRadius: BorderRadius.circular(DesignTokens.radiusMedium),
+            border: Border.all(
+              color: selected
+                  ? DesignTokens.accentDeep
+                  : (isDark
+                        ? DesignTokens.surfaceVariantDark
+                        : theme.colorScheme.outlineVariant),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                color: selected
+                    ? Colors.white
+                    : theme.colorScheme.onSurfaceVariant,
+                size: 24,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: selected
+                      ? Colors.white
+                      : theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1838,10 +2658,15 @@ class _TimePickerField extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final resolvedFill =
-        fillColor ?? (isDark ? const Color(0xFF1B1529) : Colors.white);
+        fillColor ??
+        (isDark
+            ? DesignTokens.cardDarkAlt
+            : theme.colorScheme.surfaceContainerLow);
     final resolvedBorder =
         borderColor ??
-        (isDark ? const Color(0xFF3C3355) : const Color(0xFFE2E8F0));
+        (isDark
+            ? DesignTokens.surfaceVariantDark
+            : theme.colorScheme.outlineVariant);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1858,13 +2683,19 @@ class _TimePickerField extends StatelessWidget {
             height: 58,
             decoration: BoxDecoration(
               border: Border.all(color: resolvedBorder),
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(DesignTokens.radiusLarge),
               color: resolvedFill,
             ),
             padding: const EdgeInsets.symmetric(horizontal: 16),
             alignment: Alignment.centerLeft,
             child: Row(
               children: [
+                Icon(
+                  Icons.schedule_outlined,
+                  size: 20,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 10),
                 Expanded(
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
@@ -1874,12 +2705,6 @@ class _TimePickerField extends StatelessWidget {
                       style: theme.textTheme.bodyLarge,
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Icon(
-                  Icons.access_time_outlined,
-                  size: 18,
-                  color: theme.colorScheme.primary,
                 ),
               ],
             ),
@@ -1903,13 +2728,27 @@ class _RecurrenceOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: Icon(
         selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-        color: selected ? _calendarAccent : Colors.grey,
+        color: selected
+            ? theme.colorScheme.primary
+            : theme.colorScheme.onSurfaceVariant,
       ),
-      title: Text(label),
+      title: Text(
+        label,
+        style: theme.textTheme.bodyLarge?.copyWith(
+          fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+        ),
+      ),
+      trailing: selected
+          ? Icon(
+              Icons.check_circle_rounded,
+              color: theme.colorScheme.primary,
+            )
+          : null,
       onTap: onTap,
     );
   }

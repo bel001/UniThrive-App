@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/design_tokens.dart';
 import '../core/theme.dart';
 
 class AppColors {
@@ -34,39 +35,42 @@ class AppColors {
   }
 
   // Duolingo colors (theme-independent)
-  static const Color duolingoGreen = UniThriveTheme.duolingoGreen;
-  static const Color duolingoGold = UniThriveTheme.duolingoGold;
-  static const Color duolingoOrange = UniThriveTheme.duolingoOrange;
-  static const Color duolingoBlue = UniThriveTheme.duolingoBlue;
+  static const Color duolingoGreen = DesignTokens.success;
+  static const Color duolingoGold = DesignTokens.warning;
+  static const Color duolingoOrange = DesignTokens.warning;
+  static const Color duolingoBlue = DesignTokens.info;
   static const Color primary = UniThriveTheme.primary;
 
   // Adaptive gradients
   static List<Color> getPurpleGradient(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return isDark
-        ? [const Color(0xFF9FCFBB), const Color(0xFF7FB5A0)]
-        : [const Color(0xFF9FCFBB), const Color(0xFFB8E0D0)];
+        ? [DesignTokens.lilac, DesignTokens.accentVivid]
+        : [DesignTokens.lilac, DesignTokens.accent];
   }
 
   static List<Color> getGreenGradient(BuildContext context) {
-    return [duolingoGreen, const Color(0xFF89E219)];
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return isDark
+        ? [DesignTokens.mint, DesignTokens.mintStrong]
+        : [DesignTokens.mintStrong, DesignTokens.success];
   }
 
   static List<Color> getGoldGradient(BuildContext context) {
-    return [duolingoGold, const Color(0xFFFFA500)];
+    return [DesignTokens.warningDark, DesignTokens.warning];
   }
 
   // State colors
   static Color getSuccessColor(BuildContext context) {
-    return duolingoGreen;
+    return DesignTokens.success;
   }
 
   static Color getWarningColor(BuildContext context) {
-    return duolingoOrange;
+    return DesignTokens.warning;
   }
 
   static Color getInfoColor(BuildContext context) {
-    return duolingoBlue;
+    return DesignTokens.info;
   }
 
   // Surface variations

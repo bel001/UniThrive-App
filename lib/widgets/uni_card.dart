@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-
 import 'package:flutter/services.dart';
+
+import '../core/design_tokens.dart';
 
 class UniCard extends StatefulWidget {
   final Widget child;
@@ -16,7 +17,7 @@ class UniCard extends StatefulWidget {
     this.padding = const EdgeInsets.all(20),
     this.color,
     this.margin = EdgeInsets.zero,
-    this.radius = 28,
+    this.radius = DesignTokens.radiusHero,
     this.onTap,
   });
 
@@ -48,28 +49,38 @@ class _UniCardState extends State<UniCard> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    
+    final fillColor = widget.color ?? theme.colorScheme.surfaceContainerLow;
+    final borderRadius = BorderRadius.circular(widget.radius);
+    final borderSide = BorderSide(
+      color: isDark
+          ? Colors.white.withValues(alpha: 0.08)
+          : theme.colorScheme.outlineVariant,
+      width: 1,
+    );
+
+    // Sombra única del Design System; borde outlineVariant 1px.
     final card = Container(
       margin: widget.margin,
       decoration: BoxDecoration(
-        color: widget.color ?? theme.colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(widget.radius),
-        border: Border.all(
-          color: isDark
-              ? theme.colorScheme.outlineVariant
-              : theme.colorScheme.outline,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: isDark
-                ? Colors.black.withValues(alpha: 0.12)
-                : theme.colorScheme.primary.withValues(alpha: 0.05),
-            blurRadius: 32,
-            offset: const Offset(0, 12),
-          ),
-        ],
+        borderRadius: borderRadius,
+        boxShadow: isDark ? DesignTokens.cardShadowDark(0.14) : DesignTokens.cardShadow,
       ),
-      child: Padding(padding: widget.padding, child: widget.child),
+      child: Material(
+        color: fillColor,
+        shape: RoundedRectangleBorder(
+          borderRadius: borderRadius,
+          side: borderSide,
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: widget.onTap,
+          borderRadius: borderRadius,
+          // Si no hay onTap, desactiva el splash para no interferir con ListTiles internos.
+          splashFactory: widget.onTap == null ? NoSplash.splashFactory : InkRipple.splashFactory,
+          highlightColor: widget.onTap == null ? Colors.transparent : null,
+          child: Padding(padding: widget.padding, child: widget.child),
+        ),
+      ),
     );
 
     if (widget.onTap == null) {

@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import '../core/design_tokens.dart';
 
 class CelebrationAnimation extends StatefulWidget {
   final Widget child;
@@ -254,7 +255,7 @@ class _CelebrationDialogState extends State<_CelebrationDialog>
               ElevatedButton(
                 onPressed: () => Navigator.of(context).pop(),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF9FCFBB),
+                  backgroundColor: DesignTokens.adaptiveMint(context),
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 32,

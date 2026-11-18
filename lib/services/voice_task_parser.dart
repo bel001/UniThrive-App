@@ -103,7 +103,7 @@ class VoiceTaskParser {
         normalizedTranscript,
         normalizedProjectName,
       );
-      if (score < 0.76) continue;
+      if (score < 0.62) continue;
 
       if (bestMatch == null || score > bestMatch.score) {
         bestMatch = _ProjectMatch(name: projectName, score: score);
@@ -224,6 +224,11 @@ class VoiceTaskParser {
     for (final pattern in trailingSchedulePatterns) {
       title = title.replaceFirst(pattern, '');
     }
+    // Limpia coletilla huérfana tras remover fecha: "para", "en", "de" sueltos
+    title = title.replaceFirst(RegExp(r'\s+(?:para|en|de|del|con)\s*$', caseSensitive: false), '');
+    // Soporta nuevo patrón "en 3 días / dentro de X días / en una semana / fin de semana"
+    title = title.replaceFirst(RegExp(r'\s+(?:en|dentro\s+de)\s+(?:\d+|una|un)\s+d[ií]as?(?:\s+a\s+las.*)?$', caseSensitive: false), '');
+    title = title.replaceFirst(RegExp(r'\s+fin\s+de\s+semana(?:\s+a\s+las.*)?$', caseSensitive: false), '');
 
     title = title
         .replaceAll(
@@ -251,6 +256,7 @@ class VoiceTaskParser {
       ),
       '',
     );
+    cleaned = cleaned.replaceAll(RegExp(r'\s+(?:para|en|de)\s*$', caseSensitive: false), '');
     cleaned = cleaned.replaceAll(RegExp(r'^[\s:;,.-]+|[\s:;,.-]+$'), '');
     cleaned = _compactWhitespace(cleaned);
     if (cleaned.isEmpty) {
@@ -313,6 +319,33 @@ class VoiceTaskParser {
   }
 
   _NamedDateExtraction? _extractNamedDate(String text, DateTime referenceTime) {
+    // Soporte: "en 3 días", "dentro de 2 días", "en una semana", "fin de semana", "esta tarde/noche"
+    final normalized = text.toLowerCase();
+    // en X días / dentro de X días
+    final inDaysMatch = RegExp(r'(?:en|dentro\s+de)\s+(\d+|una|un)\s+d[ií]as?').firstMatch(normalized);
+    if (inDaysMatch != null) {
+      final raw = inDaysMatch.group(1) ?? '1';
+      final days = raw == 'una' || raw == 'un' ? 1 : int.tryParse(raw) ?? 1;
+      final date = DateTime(referenceTime.year, referenceTime.month, referenceTime.day).add(Duration(days: days));
+      return _NamedDateExtraction(date: date, matchedText: inDaysMatch.group(0) ?? raw);
+    }
+    if (normalized.contains('en una semana') || normalized.contains('en una seman')) {
+      final date = DateTime(referenceTime.year, referenceTime.month, referenceTime.day).add(const Duration(days: 7));
+      return _NamedDateExtraction(date: date, matchedText: 'en una semana');
+    }
+    if (normalized.contains('fin de semana')) {
+      // sábado próximo
+      var daysAhead = DateTime.saturday - referenceTime.weekday;
+      if (daysAhead <= 0) daysAhead += 7;
+      final date = DateTime(referenceTime.year, referenceTime.month, referenceTime.day).add(Duration(days: daysAhead));
+      return _NamedDateExtraction(date: date, matchedText: 'fin de semana');
+    }
+    // "esta tarde/noche" y "hoy en la tarde/noche" → hoy
+    if (normalized.contains('esta tarde') || normalized.contains('esta noche') || normalized.contains('hoy en la')) {
+      final date = DateTime(referenceTime.year, referenceTime.month, referenceTime.day);
+      return _NamedDateExtraction(date: date, matchedText: 'hoy');
+    }
+
     final relativeMatches = <String, int>{
       'pasado mañana': 2,
       'pasado manana': 2,
@@ -333,17 +366,23 @@ class VoiceTaskParser {
     }
 
     final weekdayRegex = RegExp(
-      r'(?:el|este|esta|pr[oó]ximo)?\s*(lunes|martes|mi[eé]rcoles|jueves|viernes|s[áa]bado|domingo)',
+      r'(?:el|este|esta|pr[oó]ximo|proximo)?\s*(lunes|martes|mi[eé]rcoles|jueves|viernes|s[áa]bado|domingo)',
       caseSensitive: false,
     );
     final weekdayMatch = weekdayRegex.firstMatch(text);
     if (weekdayMatch != null) {
+      final full = weekdayMatch.group(0) ?? '';
       final weekdayLabel = weekdayMatch.group(1) ?? '';
       final weekday = _weekdayFromSpanish(weekdayLabel);
       if (weekday != null) {
         var daysAhead = weekday - referenceTime.weekday;
-        if (daysAhead < 0) {
-          daysAhead += 7;
+        final isProximo = full.toLowerCase().contains('proximo') || full.toLowerCase().contains('próximo');
+        if (isProximo) {
+          // "próximo lunes" si hoy es lunes → +7, no 0
+          if (daysAhead <= 0) daysAhead += 7;
+          if (daysAhead == 0) daysAhead = 7;
+        } else {
+          if (daysAhead < 0) daysAhead += 7;
         }
         final date = DateTime(
           referenceTime.year,
@@ -352,7 +391,7 @@ class VoiceTaskParser {
         ).add(Duration(days: daysAhead));
         return _NamedDateExtraction(
           date: date,
-          matchedText: weekdayMatch.group(0) ?? weekdayLabel,
+          matchedText: full,
         );
       }
     }
@@ -432,6 +471,36 @@ class VoiceTaskParser {
   }
 
   _TimeExtraction? _extractTime(String text) {
+    // Soporte "menos cuarto/diez" ej. "7 menos cuarto" -> 6:45
+    final menosMatch = RegExp(
+      r'(?:a\s+las\s+)?(\d{1,2})\s+menos\s+(cuarto|diez|veinte|cinco)',
+      caseSensitive: false,
+    ).firstMatch(text);
+    if (menosMatch != null) {
+      var hour = int.tryParse(menosMatch.group(1) ?? '') ?? 0;
+      final word = menosMatch.group(2)?.toLowerCase() ?? '';
+      var delta = 15;
+      if (word == 'diez') delta = 10;
+      if (word == 'veinte') delta = 20;
+      if (word == 'cinco') delta = 5;
+      hour -= 1;
+      if (hour < 0) hour += 12;
+      if (hour == 0) hour = 12;
+      var minute = 60 - delta;
+      // Ajuste meridiem por frase circundante
+      final after = text.substring(menosMatch.end).toLowerCase();
+      final before = text.substring(0, menosMatch.start).toLowerCase();
+      final hasPm = after.contains('tarde') || after.contains('noche') || after.contains('pm') || before.contains('tarde');
+      if (hasPm && hour < 12) hour += 12;
+      if (!hasPm && hour >= 1 && hour <= 6 && !text.toLowerCase().contains('mañana')) {
+        // heurística mañana/tarde ya aplicada abajo, mantenemos
+      }
+      return _TimeExtraction(
+        time: DateTime(0, 1, 1, hour % 24, minute),
+        matchedText: menosMatch.group(0) ?? '',
+      );
+    }
+
     final patterns = <RegExp>[
       RegExp(
         r'(?:a\s+las|a\s+la|para\s+las|para\s+la)\s*(\d{1,2})(?:[:.](\d{2})|\s+y\s+(media|cuarto))?\s*(a\.?\s*m\.?|p\.?\s*m\.?|de\s+la\s+mañana|de\s+la\s+tarde|de\s+la\s+noche)?',

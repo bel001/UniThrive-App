@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../core/alarm_sounds.dart';
+import '../core/constants.dart';
 import '../services/notification_service.dart';
 
 class SettingsState extends ChangeNotifier {
@@ -9,9 +11,9 @@ class SettingsState extends ChangeNotifier {
   int _reminderLeadMinutes = 15;
   double _textScale = 1.0;
   String _alarmSound = 'Clásico';
-  bool _voiceAiEnabled = false;
-  String _voiceAiEndpointUrl = '';
-  String _voiceAiProxyToken = '';
+  int _focusDurationMinutes = Constants.defaultFocusMinutes;
+  int _breakDurationMinutes = Constants.defaultBreakMinutes;
+  bool _pomodoroEndSound = true;
 
   ThemeMode get themeMode => _themeMode;
   bool get motivationalMessages => _motivationalMessages;
@@ -20,9 +22,11 @@ class SettingsState extends ChangeNotifier {
   int get reminderLeadMinutes => _reminderLeadMinutes;
   double get textScale => _textScale;
   String get alarmSound => _alarmSound;
-  bool get voiceAiEnabled => _voiceAiEnabled;
-  String get voiceAiEndpointUrl => _voiceAiEndpointUrl;
-  String get voiceAiProxyToken => _voiceAiProxyToken;
+  int get focusDurationMinutes => _focusDurationMinutes;
+  int get breakDurationMinutes => _breakDurationMinutes;
+  Duration get focusDuration => Duration(minutes: _focusDurationMinutes);
+  Duration get breakDuration => Duration(minutes: _breakDurationMinutes);
+  bool get pomodoroEndSound => _pomodoroEndSound;
 
   void loadFromMap(Map<String, dynamic> map) {
     if (map['themeMode'] != null) {
@@ -36,11 +40,16 @@ class SettingsState extends ChangeNotifier {
     _taskRemindersEnabled = map['taskRemindersEnabled'] ?? true;
     _reminderLeadMinutes = map['reminderLeadMinutes'] ?? 15;
     _textScale = (map['textScale'] as num?)?.toDouble() ?? 1.0;
-    _alarmSound = map['alarmSound'] ?? 'Clásico';
-    _voiceAiEndpointUrl = map['voiceAiEndpointUrl'] ?? '';
-    _voiceAiProxyToken = map['voiceAiProxyToken'] ?? '';
-    _voiceAiEnabled =
-        (map['voiceAiEnabled'] ?? false) && _voiceAiEndpointUrl.isNotEmpty;
+    _alarmSound = AlarmSounds.normalizeLabel(
+      map['alarmSound'] as String?,
+    );
+    _focusDurationMinutes =
+        (map['focusDurationMinutes'] as num?)?.toInt() ??
+        Constants.defaultFocusMinutes;
+    _breakDurationMinutes =
+        (map['breakDurationMinutes'] as num?)?.toInt() ??
+        Constants.defaultBreakMinutes;
+    _pomodoroEndSound = map['pomodoroEndSound'] ?? true;
     NotificationService.setDefaultLeadMinutes(_reminderLeadMinutes);
     notifyListeners();
   }
@@ -54,9 +63,9 @@ class SettingsState extends ChangeNotifier {
       'reminderLeadMinutes': _reminderLeadMinutes,
       'textScale': _textScale,
       'alarmSound': _alarmSound,
-      'voiceAiEnabled': _voiceAiEnabled,
-      'voiceAiEndpointUrl': _voiceAiEndpointUrl,
-      'voiceAiProxyToken': _voiceAiProxyToken,
+      'focusDurationMinutes': _focusDurationMinutes,
+      'breakDurationMinutes': _breakDurationMinutes,
+      'pomodoroEndSound': _pomodoroEndSound,
     };
   }
 
@@ -91,9 +100,9 @@ class SettingsState extends ChangeNotifier {
     _motivationalMessages = true;
     _reminderLeadMinutes = 15;
     _alarmSound = 'Clásico';
-    _voiceAiEnabled = false;
-    _voiceAiEndpointUrl = '';
-    _voiceAiProxyToken = '';
+    _focusDurationMinutes = Constants.defaultFocusMinutes;
+    _breakDurationMinutes = Constants.defaultBreakMinutes;
+    _pomodoroEndSound = true;
     NotificationService.setDefaultLeadMinutes(_reminderLeadMinutes);
     notifyListeners();
   }
@@ -124,33 +133,29 @@ class SettingsState extends ChangeNotifier {
   }
 
   void setAlarmSound(String sound) {
-    if (_alarmSound == sound) return;
-    _alarmSound = sound;
+    final normalized = AlarmSounds.normalizeLabel(sound);
+    if (_alarmSound == normalized) return;
+    _alarmSound = normalized;
     notifyListeners();
   }
 
-  void setVoiceAiEnabled(bool enabled) {
-    if (enabled && _voiceAiEndpointUrl.isEmpty) return;
-    if (_voiceAiEnabled == enabled) return;
-    _voiceAiEnabled = enabled;
+  void setFocusDurationMinutes(int minutes) {
+    final normalized = minutes.clamp(5, 120);
+    if (_focusDurationMinutes == normalized) return;
+    _focusDurationMinutes = normalized;
     notifyListeners();
   }
 
-  void updateVoiceAiConfig({
-    required String endpointUrl,
-    required String proxyToken,
-  }) {
-    final normalizedEndpoint = endpointUrl.trim();
-    final normalizedToken = proxyToken.trim();
-    if (_voiceAiEndpointUrl == normalizedEndpoint &&
-        _voiceAiProxyToken == normalizedToken) {
-      return;
-    }
-    _voiceAiEndpointUrl = normalizedEndpoint;
-    _voiceAiProxyToken = normalizedToken;
-    if (_voiceAiEndpointUrl.isEmpty) {
-      _voiceAiEnabled = false;
-    }
+  void setBreakDurationMinutes(int minutes) {
+    final normalized = minutes.clamp(1, 60);
+    if (_breakDurationMinutes == normalized) return;
+    _breakDurationMinutes = normalized;
+    notifyListeners();
+  }
+
+  void setPomodoroEndSound(bool enabled) {
+    if (_pomodoroEndSound == enabled) return;
+    _pomodoroEndSound = enabled;
     notifyListeners();
   }
 }

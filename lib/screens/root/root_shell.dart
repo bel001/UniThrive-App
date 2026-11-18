@@ -81,48 +81,67 @@ class _RootShellState extends State<RootShell> {
                       : theme.colorScheme.onSurfaceVariant;
 
                   return Expanded(
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(24),
-                      onTap: () => _onItemTapped(index),
+                    child: Semantics(
+                      label: item.label,
+                      button: true,
+                      selected: isSelected,
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 4,
-                          vertical: 6,
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            AnimatedContainer(
-                              duration: const Duration(milliseconds: 220),
-                              curve: Curves.easeOutCubic,
-                              width: isSelected ? 30 : 18,
-                              height: 2,
-                              margin: const EdgeInsets.only(bottom: 6),
-                              decoration: BoxDecoration(
-                                color: isSelected
-                                    ? theme.colorScheme.primary
-                                    : Colors.transparent,
-                                borderRadius: BorderRadius.circular(999),
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          curve: Curves.easeOutCubic,
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? theme.colorScheme.primary.withValues(
+                                    alpha: isDark ? 0.22 : 0.12,
+                                  )
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(16),
+                            border: isSelected
+                                ? Border(
+                                    bottom: BorderSide(
+                                      color: theme.colorScheme.primary,
+                                      width: 4,
+                                    ),
+                                  )
+                                : const Border(
+                                    bottom: BorderSide(
+                                      color: Colors.transparent,
+                                      width: 4,
+                                    ),
+                                  ),
+                          ),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(16),
+                            onTap: () => _onItemTapped(index),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                                vertical: 6,
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(item.icon, color: color, size: 22),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    item.label,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.labelMedium?.copyWith(
+                                      color: color,
+                                      fontSize: 11,
+                                      height: 1,
+                                      fontWeight: isSelected
+                                          ? FontWeight.w700
+                                          : FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                            Icon(item.icon, color: color, size: 22),
-                            const SizedBox(height: 3),
-                            Text(
-                              item.label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textScaler: TextScaler.noScaling,
-                              style: theme.textTheme.labelMedium?.copyWith(
-                                color: color,
-                                fontSize: 11,
-                                height: 1,
-                                fontWeight: isSelected
-                                    ? FontWeight.w700
-                                    : FontWeight.w500,
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
                       ),
                     ),

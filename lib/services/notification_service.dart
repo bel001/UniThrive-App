@@ -30,6 +30,11 @@ class NotificationService {
 
   static Future<void> initialize() async {
     if (_initialized) return;
+    if (kIsWeb || !Platform.isAndroid && !Platform.isIOS) {
+      // Sin soporte de notificaciones locales en web/desktop: no bloquear la app.
+      _initialized = true;
+      return;
+    }
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
     const iosInit = DarwinInitializationSettings(
       requestAlertPermission: true,
@@ -119,7 +124,7 @@ class NotificationService {
     await _scheduleReminder(
       key: 'task_$taskId',
       title: 'Tarea rápida',
-      body: 'Te toca "$title" en 10 minutos',
+      body: 'Te toca "$title" en $_defaultLeadMinutes minutos',
       scheduledDate: reminderTime,
     );
   }

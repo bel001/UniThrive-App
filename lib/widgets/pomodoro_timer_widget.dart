@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/pomodoro_session.dart';
 import '../core/design_tokens.dart';
+import '../state/app_state.dart';
 
 class PomodoroTimerWidget extends StatefulWidget {
   final String taskId;
@@ -19,12 +21,26 @@ class PomodoroTimerWidget extends StatefulWidget {
 
 class _PomodoroTimerWidgetState extends State<PomodoroTimerWidget> {
   Timer? _timer;
-  int _remainingSeconds = 25 * 60; // 25 minutes default
+  int _remainingSeconds = 25 * 60;
   int _totalSeconds = 25 * 60;
   bool _isRunning = false;
   bool _isBreak = false;
   int _completedPomodoros = 0;
   DateTime? _sessionStartTime;
+  SettingsState? _settings;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final settings = AppStateProvider.of(context).settings;
+    if (_settings != settings) {
+      _settings = settings;
+      if (!_isRunning) {
+        _totalSeconds = settings.focusDuration.inSeconds;
+        _remainingSeconds = _totalSeconds;
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -83,6 +99,10 @@ class _PomodoroTimerWidgetState extends State<PomodoroTimerWidget> {
 
   void _onTimerComplete() {
     _timer?.cancel();
+    final settings = _settings;
+    if (settings?.pomodoroEndSound ?? true) {
+      SystemSound.play(SystemSoundType.alert);
+    }
 
     // Save session
     if (_sessionStartTime != null && !_isBreak) {
@@ -104,7 +124,8 @@ class _PomodoroTimerWidgetState extends State<PomodoroTimerWidget> {
         setState(() {
           _isBreak = true;
           // Long break every 4 pomodoros
-          _totalSeconds = (_completedPomodoros % 4 == 0) ? 15 * 60 : 5 * 60;
+          _totalSeconds =
+              settings?.breakDuration.inSeconds ?? 5 * 60;
           _remainingSeconds = _totalSeconds;
           _isRunning = false;
         });
@@ -114,7 +135,8 @@ class _PomodoroTimerWidgetState extends State<PomodoroTimerWidget> {
       } else {
         setState(() {
           _isBreak = false;
-          _totalSeconds = 25 * 60;
+          _totalSeconds =
+              settings?.focusDuration.inSeconds ?? 25 * 60;
           _remainingSeconds = _totalSeconds;
           _isRunning = false;
         });
@@ -210,7 +232,7 @@ class _PomodoroTimerWidgetState extends State<PomodoroTimerWidget> {
                   child: CircularProgressIndicator(
                     value: 1.0,
                     strokeWidth: 12,
-                    color: Colors.grey.shade200,
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
                   ),
                 ),
                 // Progress circle
@@ -221,8 +243,8 @@ class _PomodoroTimerWidgetState extends State<PomodoroTimerWidget> {
                     value: progress,
                     strokeWidth: 12,
                     color: _isBreak
-                        ? const Color(0xFF1CB0F6)
-                        : const Color(0xFF9FCFBB),
+                        ? DesignTokens.info
+                        : DesignTokens.adaptiveMint(context),
                   ),
                 ),
                 // Time text
@@ -261,8 +283,11 @@ class _PomodoroTimerWidgetState extends State<PomodoroTimerWidget> {
                   icon: const Icon(Icons.play_arrow),
                   label: const Text('Iniciar'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF9FCFBB),
-                    foregroundColor: Colors.white,
+                    backgroundColor: DesignTokens.adaptiveMint(context),
+                    foregroundColor:
+                        Theme.of(context).brightness == Brightness.dark
+                        ? const Color(0xFF002114)
+                        : Colors.white,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 32,
                       vertical: 16,
@@ -276,7 +301,7 @@ class _PomodoroTimerWidgetState extends State<PomodoroTimerWidget> {
                   icon: const Icon(Icons.pause),
                   label: const Text('Pausar'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
+                    backgroundColor: DesignTokens.warning,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 32,

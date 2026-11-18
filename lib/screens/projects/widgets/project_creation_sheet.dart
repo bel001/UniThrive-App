@@ -4,22 +4,35 @@ import 'package:intl/intl.dart';
 
 import '../../../state/app_state.dart';
 import '../../../widgets/uni_primary_button.dart';
+import '../../../widgets/project_card.dart';
+import '../../../core/design_tokens.dart';
 import '../../../models/project.dart';
+
+/// Paleta del mockup "Nuevo Proyecto" (Vivid Academic Night).
+const _projectColors = <Color>[
+  Color(0xFFFF5E5B),
+  Color(0xFFFFB347),
+  Color(0xFFFFDE59),
+  Color(0xFF00E676),
+  Color(0xFF00B4D8),
+  Color(0xFF9D4EDD),
+  Color(0xFFFF70A6),
+];
 
 Future<void> showProjectCreationSheet({
   required BuildContext context,
   required AppState appState,
 }) async {
   final nameController = TextEditingController();
-  DateTime? dueDate;
-  final sizes = ['Pequeño', 'Mediano', 'Grande'];
-  int selectedSize = 0;
-  ProjectType selectedType = ProjectType.general;
-  final sizeColors = [
-    const Color(0xFF42C57A),
-    const Color(0xFF9FCFBB),
-    const Color(0xFFFF5A5F),
+  final descriptionController = TextEditingController();
+  final objectiveControllers = <TextEditingController>[
+    TextEditingController(),
+    TextEditingController(),
   ];
+  final objectiveDone = <bool>[false, false];
+  DateTime? dueDate;
+  int selectedColor = 0;
+  ProjectType selectedType = ProjectType.general;
 
   await showModalBottomSheet<void>(
     context: context,
@@ -32,7 +45,7 @@ Future<void> showProjectCreationSheet({
           filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
           child: Container(
             decoration: BoxDecoration(
-              color: Theme.of(context).cardColor.withValues(alpha: 0.85),
+              color: Theme.of(context).cardColor.withValues(alpha: 0.92),
             ),
             padding: EdgeInsets.only(
               left: 24,
@@ -40,375 +53,456 @@ Future<void> showProjectCreationSheet({
               top: 24,
               bottom: MediaQuery.of(modalContext).viewInsets.bottom + 24,
             ),
-        child: StatefulBuilder(
-          builder: (context, setSheetState) {
-            return SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+            child: StatefulBuilder(
+              builder: (context, setSheetState) {
+                final theme = Theme.of(context);
+                final isDark = theme.brightness == Brightness.dark;
+                final fieldBg = isDark
+                    ? DesignTokens.cardDarkAlt
+                    : theme.colorScheme.surfaceContainer;
+                final cardBg = isDark
+                    ? DesignTokens.cardDark
+                    : theme.colorScheme.surfaceContainerLow;
+                final muted = theme.colorScheme.onSurfaceVariant;
+                final accent = isDark
+                    ? DesignTokens.lilac
+                    : theme.colorScheme.primary;
+                final fieldBorder = isDark
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : DesignTokens.divider;
+
+                InputDecoration fieldDecoration(String hint) {
+                  return InputDecoration(
+                    hintText: hint,
+                    filled: true,
+                    fillColor: fieldBg,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(
+                        DesignTokens.radiusMedium,
+                      ),
+                      borderSide: BorderSide(color: fieldBorder, width: 2),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(
+                        DesignTokens.radiusMedium,
+                      ),
+                      borderSide: BorderSide(color: fieldBorder, width: 2),
+                    ),
+                  );
+                }
+
+                return SingleChildScrollView(
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Expanded(
-                        child: Text(
-                          'Nuevo Proyecto Inteligente',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(
-                          Icons.info_outline,
-                          color: Colors.grey,
-                        ),
-                        onPressed: () => _showAIInfo(context),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close_rounded),
-                        onPressed: () => Navigator.of(context).pop(),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  TextField(
-                    controller: nameController,
-                    decoration: const InputDecoration(
-                      hintText: 'Ej. Ensayo de historia moderna',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.all(Radius.circular(20)),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  GestureDetector(
-                    onTap: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: DateTime.now().add(
-                          const Duration(days: 7),
-                        ),
-                        firstDate: DateTime.now(),
-                        lastDate: DateTime.now().add(const Duration(days: 365)),
-                      );
-                      if (picked != null) {
-                        setSheetState(() => dueDate = picked);
-                      }
-                    },
-                    child: Container(
-                      height: 62,
-                      padding: const EdgeInsets.symmetric(horizontal: 18),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
+                      // Header glass + close.
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Expanded(
                             child: Text(
-                              dueDate == null
-                                  ? 'Selecciona una fecha'
-                                  : DateFormat.yMMMMd('es').format(dueDate!),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                              'Nuevo Proyecto',
+                              style: theme.textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          const Icon(
-                            Icons.calendar_month_outlined,
-                            color: Color(0xFF9FCFBB),
+                          GestureDetector(
+                            onTap: () => Navigator.of(context).pop(),
+                            child: Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: fieldBg,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.close_rounded,
+                                color: muted,
+                              ),
+                            ),
                           ),
                         ],
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  const Text(
-                    'Tipo de proyecto',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _TypeChip(
-                        label: 'Ensayo',
-                        icon: Icons.article_outlined,
-                        selected: selectedType == ProjectType.essay,
-                        onTap: () => setSheetState(
-                          () => selectedType = ProjectType.essay,
+                      const SizedBox(height: 24),
+
+                      // Nombre.
+                      Text(
+                        'Nombre del Proyecto',
+                        style: theme.textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: nameController,
+                        style: theme.textTheme.bodyLarge,
+                        decoration: fieldDecoration(
+                          'Ej. Investigación de Biología',
                         ),
                       ),
-                      _TypeChip(
-                        label: 'Presentación',
-                        icon: Icons.slideshow_outlined,
-                        selected: selectedType == ProjectType.presentation,
-                        onTap: () => setSheetState(
-                          () => selectedType = ProjectType.presentation,
+                      const SizedBox(height: 16),
+
+                      // Descripción.
+                      RichText(
+                        text: TextSpan(
+                          style: theme.textTheme.titleSmall,
+                          children: [
+                            const TextSpan(text: 'Descripción '),
+                            TextSpan(
+                              text: '(Opcional)',
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                          ],
                         ),
                       ),
-                      _TypeChip(
-                        label: 'Desarrollo',
-                        icon: Icons.code_outlined,
-                        selected: selectedType == ProjectType.development,
-                        onTap: () => setSheetState(
-                          () => selectedType = ProjectType.development,
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: descriptionController,
+                        maxLines: 3,
+                        minLines: 2,
+                        style: theme.textTheme.bodyMedium,
+                        decoration: fieldDecoration(
+                          '¿De qué trata este proyecto?',
                         ),
                       ),
-                      _TypeChip(
-                        label: 'Estudio',
-                        icon: Icons.school_outlined,
-                        selected: selectedType == ProjectType.study,
-                        onTap: () => setSheetState(
-                          () => selectedType = ProjectType.study,
+                      const SizedBox(height: 24),
+
+                      // Color del proyecto: 7 dots.
+                      Text(
+                        'Color del Proyecto',
+                        style: theme.textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        height: 56,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: _projectColors.length,
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(width: 16),
+                          itemBuilder: (context, index) {
+                            final selected = selectedColor == index;
+                            return GestureDetector(
+                              onTap: () => setSheetState(
+                                () => selectedColor = index,
+                              ),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                width: 48,
+                                height: 48,
+                                decoration: BoxDecoration(
+                                  color: _projectColors[index],
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: selected
+                                        ? theme.colorScheme.onSurface
+                                        : Colors.transparent,
+                                    width: 4,
+                                  ),
+                                  boxShadow: selected
+                                      ? [
+                                          BoxShadow(
+                                            color: Colors.black.withValues(
+                                              alpha: 0.3,
+                                            ),
+                                            blurRadius: 12,
+                                            offset: const Offset(0, 4),
+                                          ),
+                                        ]
+                                      : [],
+                                ),
+                              ),
+                            );
+                          },
                         ),
                       ),
-                      _TypeChip(
-                        label: 'Creativo',
-                        icon: Icons.palette_outlined,
-                        selected: selectedType == ProjectType.creative,
-                        onTap: () => setSheetState(
-                          () => selectedType = ProjectType.creative,
+                      const SizedBox(height: 24),
+
+                      // Tipo de proyecto: chips con icono.
+                      Text(
+                        'Tipo de Proyecto',
+                        style: theme.textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        height: 44,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          clipBehavior: Clip.none,
+                          itemCount: ProjectType.values.length,
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(width: 8),
+                          itemBuilder: (context, index) {
+                            final type = ProjectType.values[index];
+                            final selected = selectedType == type;
+                            return ChoiceChip(
+                              label: Text(_typeLabel(type)),
+                              avatar: Icon(
+                                ProjectCard.iconForType(type),
+                                size: 18,
+                              ),
+                              selected: selected,
+                              onSelected: (_) => setSheetState(
+                                () => selectedType = type,
+                              ),
+                            );
+                          },
                         ),
                       ),
-                      _TypeChip(
-                        label: 'General',
-                        icon: Icons.folder_outlined,
-                        selected: selectedType == ProjectType.general,
-                        onTap: () => setSheetState(
-                          () => selectedType = ProjectType.general,
+                      const SizedBox(height: 24),
+
+                      // Fecha de entrega: card con chevron.
+                      Text(
+                        'Fecha de Entrega',
+                        style: theme.textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 12),
+                      GestureDetector(
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: dueDate ??
+                                DateTime.now().add(
+                                  const Duration(days: 7),
+                                ),
+                            firstDate: DateTime.now(),
+                            lastDate:
+                                DateTime.now().add(const Duration(days: 365)),
+                          );
+                          if (picked != null) {
+                            setSheetState(() => dueDate = picked);
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: cardBg,
+                            borderRadius: BorderRadius.circular(
+                              DesignTokens.radiusLarge,
+                            ),
+                            border: Border.all(
+                              color: fieldBorder,
+                              width: 2,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 48,
+                                height: 48,
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.primary.withValues(
+                                    alpha: 0.20,
+                                  ),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Icon(
+                                  Icons.calendar_today_outlined,
+                                  color: accent,
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      dueDate == null
+                                          ? 'Sin fecha de entrega'
+                                          : DateFormat.yMMMMd(
+                                              'es',
+                                            ).format(dueDate!),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.titleSmall,
+                                    ),
+                                    Text(
+                                      'Toca para seleccionar',
+                                      style: theme.textTheme.labelSmall,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Icon(
+                                Icons.chevron_right_rounded,
+                                color: muted,
+                              ),
+                            ],
+                          ),
                         ),
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Objetivos iniciales editables inline.
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Objetivos Iniciales',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleSmall,
+                            ),
+                          ),
+                          TextButton.icon(
+                            onPressed: () => setSheetState(() {
+                              objectiveControllers.add(
+                                TextEditingController(),
+                              );
+                              objectiveDone.add(false);
+                            }),
+                            icon: const Icon(Icons.add_rounded, size: 18),
+                            label: const Text('Agregar'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Column(
+                        children: [
+                          for (
+                            var i = 0;
+                            i < objectiveControllers.length;
+                            i++
+                          )
+                            Padding(
+                              padding: EdgeInsets.only(
+                                bottom:
+                                    i == objectiveControllers.length - 1
+                                        ? 0
+                                        : 12,
+                              ),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: cardBg,
+                                  borderRadius: BorderRadius.circular(
+                                    DesignTokens.radiusMedium,
+                                  ),
+                                  border: Border.all(
+                                    color: fieldBorder,
+                                    width: 2,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Checkbox(
+                                      value: objectiveDone[i],
+                                      onChanged: (value) => setSheetState(
+                                        () => objectiveDone[i] =
+                                            value ?? false,
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: TextField(
+                                        controller:
+                                            objectiveControllers[i],
+                                        style: theme.textTheme.bodyMedium,
+                                        decoration: const InputDecoration(
+                                          hintText:
+                                              'Ej. Recopilar fuentes bibliográficas',
+                                          border: InputBorder.none,
+                                          enabledBorder: InputBorder.none,
+                                          focusedBorder: InputBorder.none,
+                                        ),
+                                      ),
+                                    ),
+                                    if (objectiveControllers.length > 1)
+                                      IconButton(
+                                        icon: Icon(
+                                          Icons.close_rounded,
+                                          color: muted,
+                                        ),
+                                        tooltip: 'Quitar objetivo',
+                                        onPressed: () => setSheetState(() {
+                                          objectiveControllers.removeAt(i);
+                                          objectiveDone.removeAt(i);
+                                        }),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 32),
+
+                      // CTA flotante chunky compartido.
+                      UniPrimaryButton(
+                        label: 'Crear Proyecto',
+                        onPressed: () {
+                          if (nameController.text.trim().isEmpty ||
+                              dueDate == null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Completa nombre y fecha de entrega.',
+                                ),
+                              ),
+                            );
+                            return;
+                          }
+                          final objectives = objectiveControllers
+                              .map((c) => c.text.trim())
+                              .where((text) => text.isNotEmpty)
+                              .toList();
+                          final tag = objectives.length <= 4
+                              ? 'Pequeño'
+                              : objectives.length <= 6
+                                  ? 'Mediano'
+                                  : 'Grande';
+                          final description =
+                              descriptionController.text.trim().isEmpty
+                                  ? 'Proyecto ${tag.toLowerCase()} creado con IA'
+                                  : descriptionController.text.trim();
+                          final project = appState.addProject(
+                            name: nameController.text.trim(),
+                            dueDate: dueDate!,
+                            color: _projectColors[selectedColor],
+                            tag: tag,
+                            type: selectedType,
+                            autoPlan: objectives.isEmpty,
+                            description: description,
+                          );
+                          for (final objective in objectives) {
+                            appState.addTask(
+                              projectId: project.id,
+                              title: objective,
+                              dueDate: dueDate,
+                              silent: true,
+                            );
+                          }
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                objectives.isEmpty
+                                    ? 'Plan inteligente generado con IA.'
+                                    : 'Proyecto creado con ${objectives.length} objetivo(s).',
+                              ),
+                            ),
+                          );
+                          Navigator.of(context).pop();
+                        },
                       ),
                     ],
                   ),
-                  const SizedBox(height: 18),
-                  const Text(
-                    'Tamaño del proyecto',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 12),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final compact = constraints.maxWidth < 320;
-                      final cards = List.generate(sizes.length, (index) {
-                        final active = selectedSize == index;
-                        final card = GestureDetector(
-                          onTap: () =>
-                              setSheetState(() => selectedSize = index),
-                          child: Container(
-                            height: 90,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: active
-                                    ? sizeColors[index]
-                                    : const Color(0xFFE2E8F0),
-                              ),
-                              color: active
-                                  ? sizeColors[index].withValues(alpha: 0.12)
-                                  : const Color(0xFFF8F8FC),
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  _sizeIcon(index),
-                                  color: sizeColors[index],
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  sizes[index],
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: sizeColors[index],
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-
-                        if (compact) {
-                          return Padding(
-                            padding: EdgeInsets.only(
-                              bottom: index == sizes.length - 1 ? 0 : 12,
-                            ),
-                            child: SizedBox(
-                              width: double.infinity,
-                              child: card,
-                            ),
-                          );
-                        }
-
-                        return Expanded(
-                          child: Padding(
-                            padding: EdgeInsets.only(
-                              right: index == sizes.length - 1 ? 0 : 12,
-                            ),
-                            child: card,
-                          ),
-                        );
-                      });
-
-                      if (compact) {
-                        return Column(children: cards);
-                      }
-
-                      return Row(children: cards);
-                    },
-                  ),
-                  const SizedBox(height: 24),
-                  UniPrimaryButton(
-                    backgroundColor: Colors.red,
-                    label: '✨ Crear Mi Plan Inteligente',
-                    onPressed: () {
-                      if (nameController.text.trim().isEmpty ||
-                          dueDate == null) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Completa nombre y fecha de entrega.',
-                            ),
-                          ),
-                        );
-                        return;
-                      }
-                      appState.addProject(
-                        name: nameController.text.trim(),
-                        dueDate: dueDate!,
-                        color: sizeColors[selectedSize],
-                        tag: sizes[selectedSize],
-                        autoPlan: true,
-                        type: selectedType,
-                        description:
-                            'Proyecto ${sizes[selectedSize].toLowerCase()} creado con IA',
-                      );
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Plan inteligente generado con IA.'),
-                        ),
-                      );
-                      Navigator.of(context).pop();
-                    },
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
-      )));
-    },
-  );
-}
-
-IconData _sizeIcon(int index) {
-  switch (index) {
-    case 0:
-      return Icons.spa_outlined;
-    case 1:
-      return Icons.eco_outlined;
-    default:
-      return Icons.park_outlined;
-  }
-}
-
-class _TypeChip extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _TypeChip({
-    required this.label,
-    required this.icon,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final color = selected ? const Color(0xFF6C63FF) : Colors.grey.shade600;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: selected
-              ? const Color(0xFF6C63FF).withValues(alpha: 0.1)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: selected ? const Color(0xFF6C63FF) : Colors.grey.shade300,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 18, color: color),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                color: color,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                fontSize: 13,
-              ),
+                );
+              },
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-void _showAIInfo(BuildContext context) {
-  showDialog(
-    context: context,
-    builder: (context) {
-      return AlertDialog(
-        title: const Text('¿Cómo funciona nuestra IA?'),
-        content: const SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                "Nuestra IA es real y funciona sobre una base de planificación por reglas inteligentes, que es nuestro punto de partida. No es una 'caja negra' incomprensible.",
-                style: TextStyle(height: 1.5),
-              ),
-              SizedBox(height: 12),
-              Text(
-                "En la versión actual, el motor realiza tres tareas clave:",
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              SizedBox(height: 8),
-              Text(
-                "• Analiza la disponibilidad del usuario basándose en el horario que nos proporciona.",
-              ),
-              SizedBox(height: 4),
-              Text(
-                "• Desglosa el proyecto en 'micro-tareas' según la dificultad que el usuario estima.",
-              ),
-              SizedBox(height: 4),
-              Text(
-                "• Y lo más importante, asigna esas tareas de forma equilibrada en el tiempo para evitar la acumulación y el estrés.",
-              ),
-            ],
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Entendido'),
-          ),
-        ],
       );
     },
   );
 }
+
+String _typeLabel(ProjectType type) => switch (type) {
+      ProjectType.essay => 'Ensayo',
+      ProjectType.presentation => 'Presentación',
+      ProjectType.development => 'Desarrollo',
+      ProjectType.study => 'Estudio',
+      ProjectType.creative => 'Creativo',
+      ProjectType.general => 'General',
+    };

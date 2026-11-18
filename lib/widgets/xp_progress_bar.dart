@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/design_tokens.dart';
 
 class XPProgressBar extends StatefulWidget {
   final int level;
@@ -71,14 +72,19 @@ class _XPProgressBarState extends State<XPProgressBar>
         gradient: LinearGradient(
           colors: isDark
               ? [const Color(0xFF4A148C), const Color(0xFF7B1FA2)]
-              : [const Color(0xFF9FCFBB), const Color(0xFFB39DFF)],
+              : [
+                  DesignTokens.adaptiveMint(context),
+                  DesignTokens.lilac,
+                ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF9FCFBB).withValues(alpha: 0.3),
+            color: DesignTokens.adaptiveMint(
+              context,
+            ).withValues(alpha: 0.3),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),

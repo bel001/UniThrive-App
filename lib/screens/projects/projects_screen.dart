@@ -4,6 +4,7 @@ import '../../core/design_tokens.dart';
 import '../../models/project.dart';
 import '../../state/app_state.dart';
 import '../../widgets/project_card.dart';
+import '../../widgets/progress_bar.dart';
 import '../../widgets/soft_page_route.dart';
 import '../../widgets/uni_primary_button.dart';
 import '../projects/project_detail_screen.dart';
@@ -19,6 +20,15 @@ class ProjectsScreen extends StatefulWidget {
 class _ProjectsScreenState extends State<ProjectsScreen> {
   int _selectedTab = 0;
   bool _isGridView = true;
+
+  /// Promedio de avance de los proyectos activos (0.0–1.0).
+  double _overallProgress(AppState appState) {
+    final active = appState.activeProjects;
+    if (active.isEmpty) return 0;
+    final sum =
+        active.fold<double>(0, (total, project) => total + project.progress);
+    return (sum / active.length) / 100;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -45,9 +55,16 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Proyectos', style: theme.textTheme.displayLarge),
+                        Expanded(
+                          child: Text(
+                            'Proyectos',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.displayLarge,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
                         IconButton(
                           onPressed: () => setState(() => _isGridView = !_isGridView),
                           icon: Icon(_isGridView ? Icons.view_list_rounded : Icons.grid_view_rounded),
@@ -63,9 +80,9 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                   ],
                 );
                 final action = SizedBox(
-                  width: compact ? double.infinity : 146,
+                  width: compact ? double.infinity : 170,
                   child: UniPrimaryButton(
-                    label: 'Agregar',
+                    label: 'Nuevo proyecto',
                     icon: Icons.add_rounded,
                     onPressed: () => showProjectCreationSheet(
                       context: context,
@@ -95,6 +112,9 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
             _ProjectsOverview(
               activeCount: activeProjects.length,
               completedCount: completedProjects.length,
+              overallProgress: _overallProgress(appState),
+              streakDays: appState.streakDays,
+              totalXP: appState.experiencePoints,
             ),
             const SizedBox(height: 18),
             _SegmentedProjectsTabs(
@@ -107,15 +127,25 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
             if (projects.isEmpty)
               _ProjectsEmptyState(selectedTab: _selectedTab)
             else if (_isGridView)
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 14,
-                  mainAxisSpacing: 14,
-                  childAspectRatio: 0.65,
-                ),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final crossAxisCount = constraints.maxWidth >= 700
+                      ? 3
+                      : constraints.maxWidth >= 520
+                          ? 2
+                          : 2;
+                  final isCompact = constraints.maxWidth < 360;
+                  final maxExtent = constraints.maxWidth >= 700 ? 360.0 : 320.0;
+                  // Usamos maxCrossAxisExtent para aprovechar ancho en tablet sin desperdiciar espacio.
+                  return GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: maxExtent,
+                      crossAxisSpacing: 14,
+                      mainAxisSpacing: 14,
+                      childAspectRatio: isCompact ? 0.52 : (crossAxisCount == 3 ? 0.72 : 0.65),
+                    ),
                 itemCount: projects.length,
                 itemBuilder: (context, index) {
                   final project = projects[index];
@@ -129,6 +159,8 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                     onDelete: () => _confirmDeleteProject(context, appState, project),
                   );
                 },
+              );
+                },
               )
             else
               ...projects.map(
@@ -136,6 +168,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                   padding: const EdgeInsets.only(bottom: 14),
                   child: ProjectCard(
                     project: project,
+                    rowLayout: !_isGridView,
                     onTap: () => Navigator.of(context).push(
                       SoftPageRoute(
                         builder: (_) => ProjectDetailScreen(project: project),
@@ -192,107 +225,196 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
 class _ProjectsOverview extends StatelessWidget {
   final int activeCount;
   final int completedCount;
+  final double overallProgress;
+  final int streakDays;
+  final int totalXP;
 
   const _ProjectsOverview({
     required this.activeCount,
     required this.completedCount,
+    required this.overallProgress,
+    required this.streakDays,
+    required this.totalXP,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
 
-    return Container(
+    final progressCard = Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
+        color: isDark ? DesignTokens.cardDark : Colors.white,
+        borderRadius: BorderRadius.circular(DesignTokens.radiusLarge),
+        border: Border.all(
+          color: isDark
+              ? theme.colorScheme.primary.withValues(alpha: 0.20)
+              : DesignTokens.divider,
+          width: isDark ? 1 : 2,
+        ),
       ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 340;
-          if (compact) {
-            return Column(
-              children: [
-                _OverviewMetric(
-                  label: 'En curso',
-                  value: '$activeCount',
-                  accentColor: theme.colorScheme.primary,
-                  tone: theme.colorScheme.primaryContainer,
-                ),
-                const SizedBox(height: 12),
-                _OverviewMetric(
-                  label: 'Completados',
-                  value: '$completedCount',
-                  accentColor: theme.colorScheme.onSurface,
-                  tone: theme.colorScheme.surfaceContainerHighest,
-                ),
-              ],
-            );
-          }
-
-          return Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Expanded(
-                child: _OverviewMetric(
-                  label: 'En curso',
-                  value: '$activeCount',
-                  accentColor: theme.colorScheme.primary,
-                  tone: theme.colorScheme.primaryContainer,
+                child: Text(
+                  'Progreso global',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleMedium,
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _OverviewMetric(
-                  label: 'Completados',
-                  value: '$completedCount',
-                  accentColor: theme.colorScheme.onSurface,
-                  tone: theme.colorScheme.surfaceContainerHighest,
+              const SizedBox(width: 8),
+              Text(
+                '${(overallProgress * 100).round()}%',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  color: isDark
+                      ? DesignTokens.lilac
+                      : theme.colorScheme.primary,
                 ),
               ),
             ],
-          );
-        },
+          ),
+          const SizedBox(height: 14),
+          ProgressBar(value: overallProgress),
+          const SizedBox(height: 12),
+          Text(
+            '$activeCount proyectos activos · $completedCount completados',
+            style: theme.textTheme.bodySmall,
+          ),
+        ],
       ),
+    );
+
+    final streakMini = _StatMini(
+      icon: Icons.local_fire_department_rounded,
+      iconTone: DesignTokens.mint.withValues(alpha: 0.18),
+      iconColor: DesignTokens.mintStrong,
+      label: 'Racha actual',
+      value: '$streakDays días',
+      valueColor: isDark ? DesignTokens.mint : DesignTokens.success,
+    );
+    final xpMini = _StatMini(
+      icon: Icons.emoji_events_rounded,
+      iconTone: (isDark ? DesignTokens.lilac : theme.colorScheme.primary)
+          .withValues(alpha: 0.16),
+      iconColor: isDark ? DesignTokens.lilac : theme.colorScheme.primary,
+      label: 'XP total',
+      value: '$totalXP',
+      valueColor: theme.colorScheme.onSurface,
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 460) {
+          return Column(
+            children: [
+              progressCard,
+              const SizedBox(height: 14),
+              streakMini,
+              const SizedBox(height: 14),
+              xpMini,
+            ],
+          );
+        }
+        return IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(flex: 2, child: progressCard),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  children: [
+                    Expanded(child: streakMini),
+                    const SizedBox(height: 14),
+                    Expanded(child: xpMini),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
 
-class _OverviewMetric extends StatelessWidget {
+class _StatMini extends StatelessWidget {
+  final IconData icon;
+  final Color iconTone;
+  final Color iconColor;
   final String label;
   final String value;
-  final Color accentColor;
-  final Color tone;
+  final Color valueColor;
 
-  const _OverviewMetric({
+  const _StatMini({
+    required this.icon,
+    required this.iconTone,
+    required this.iconColor,
     required this.label,
     required this.value,
-    required this.accentColor,
-    required this.tone,
+    required this.valueColor,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: tone,
-        borderRadius: BorderRadius.circular(22),
+        color: isDark ? DesignTokens.cardDark : Colors.white,
+        borderRadius: BorderRadius.circular(DesignTokens.radiusLarge),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.10)
+              : DesignTokens.divider,
+          width: isDark ? 1 : 2,
+        ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Text(
-            label,
-            style: theme.textTheme.labelMedium?.copyWith(color: accentColor),
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: iconTone,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: iconColor, size: 22),
           ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: theme.textTheme.headlineSmall?.copyWith(color: accentColor),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelMedium,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: valueColor,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -318,11 +440,15 @@ class _SegmentedProjectsTabs extends StatelessWidget {
     final theme = Theme.of(context);
     final labels = ['En curso ($activeCount)', 'Completados ($completedCount)'];
 
+    final isDark = theme.brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.all(5),
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainer,
         borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.transparent,
+        ),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {

@@ -5,7 +5,9 @@ import '../../state/app_state.dart';
 import '../../models/task.dart';
 import '../../models/project.dart';
 import '../../core/design_tokens.dart';
+import '../../services/notification_service.dart';
 import '../../utils/attachment_picker.dart';
+import 'uni_primary_button.dart';
 
 class QuickTaskForm extends StatefulWidget {
   final Project? initialProject;
@@ -17,6 +19,25 @@ class QuickTaskForm extends StatefulWidget {
   State<QuickTaskForm> createState() => _QuickTaskFormState();
 }
 
+/// Categoría visible (mockup) → prefijo emoji heredado en el título.
+/// Se conserva el mecanismo de prefijo para no romper títulos existentes.
+class _CategoryOption {
+  const _CategoryOption(this.label, this.icon, this.prefix);
+  final String label;
+  final IconData icon;
+  final String prefix;
+}
+
+const _categoryOptions = <_CategoryOption>[
+  _CategoryOption('Estudio', Icons.menu_book_outlined, '📚'),
+  _CategoryOption('Proyecto', Icons.folder_outlined, '💼'),
+  _CategoryOption('Personal', Icons.person_outlined, '🎨'),
+  _CategoryOption('Más', Icons.add_rounded, '💡'),
+];
+
+/// Prefijos legacy que también se deben pelar al editar tareas antiguas.
+const _legacyPrefixes = <String>['📚', '💼', '🎨', '🏃', '💡', '🔬'];
+
 class _QuickTaskFormState extends State<QuickTaskForm> {
   late TextEditingController _titleController;
   late TextEditingController _descriptionController;
@@ -25,9 +46,9 @@ class _QuickTaskFormState extends State<QuickTaskForm> {
   late TaskPriority _selectedPriority;
   late String _selectedCategory;
   late DateTime _selectedDate;
+  late TimeOfDay _selectedTime;
+  late bool _reminderEnabled;
   String? _selectedImagePath;
-
-  final List<String> _categories = ['📚', '💼', '🎨', '🏃', '💡', '🔬'];
 
   @override
   void initState() {
@@ -47,21 +68,28 @@ class _QuickTaskFormState extends State<QuickTaskForm> {
     _selectedPriority = task?.priority ?? TaskPriority.medium;
 
     if (task != null) {
-      _selectedCategory = _categories.firstWhere(
-        (c) => task.title.startsWith(c),
-        orElse: () => '📚',
-      );
+      _selectedCategory = _categoryOptions
+          .map((c) => c.prefix)
+          .firstWhere(
+            (prefix) => task.title.startsWith(prefix),
+            orElse: () => '📚',
+          );
     } else {
       _selectedCategory = '📚';
     }
 
     _selectedDate = task?.dueDate ?? DateTime.now();
+    final due = task?.dueDate;
+    _selectedTime = due != null
+        ? TimeOfDay(hour: due.hour, minute: due.minute)
+        : TimeOfDay.now();
+    _reminderEnabled = true;
   }
 
   String _removeCategoryFromTitle(String title) {
-    for (final category in _categories) {
-      if (title.startsWith(category)) {
-        return title.substring(category.length).trim();
+    for (final prefix in _legacyPrefixes) {
+      if (title.startsWith(prefix)) {
+        return title.substring(prefix.length).trim();
       }
     }
     return title;
@@ -80,6 +108,19 @@ class _QuickTaskFormState extends State<QuickTaskForm> {
     final theme = Theme.of(context);
     final appState = AppStateProvider.of(context);
     final isEditing = widget.initialTask != null;
+    final isDark = theme.brightness == Brightness.dark;
+
+    final bg = isDark ? DesignTokens.backgroundDark : theme.colorScheme.surface;
+    final fieldBg = isDark
+        ? DesignTokens.cardDarkAlt
+        : theme.colorScheme.surfaceContainer;
+    final titleColor = isDark
+        ? DesignTokens.lilac
+        : theme.colorScheme.primary;
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final fieldBorder = isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : DesignTokens.divider;
 
     return ClipRRect(
       borderRadius: BorderRadius.vertical(
@@ -95,393 +136,605 @@ class _QuickTaskFormState extends State<QuickTaskForm> {
             top: DesignTokens.screenHorizontal,
           ),
           decoration: BoxDecoration(
-            color: theme.colorScheme.surface.withValues(alpha: 0.85),
+            color: bg.withValues(alpha: 0.96),
             border: Border(
-          top: BorderSide(
-            color: theme.colorScheme.primary.withValues(alpha: 0.3),
-            width: 3,
+              top: BorderSide(
+                color: theme.colorScheme.primary.withValues(alpha: 0.3),
+                width: 3,
+              ),
+            ),
           ),
-        ),
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Handle bar
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            SizedBox(height: DesignTokens.sectionGap),
-
-            // Title and Close Button
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  isEditing ? 'Editar Tarea' : 'Nueva Tarea Rápida',
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: theme.colorScheme.primary,
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.outlineVariant,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.close_rounded),
-                  tooltip: 'Cerrar',
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
+                const SizedBox(height: 16),
 
-            // Input
-            TextField(
-              controller: _titleController,
-              autofocus: true,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-              decoration: InputDecoration(
-                hintText: '¿Qué vas a lograr hoy?',
-                prefixIcon: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Text(
-                    _selectedCategory,
-                    style: const TextStyle(fontSize: 24),
-                  ),
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide.none,
-                ),
-                filled: true,
-                fillColor: theme.colorScheme.surfaceContainerHighest,
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Description Input
-            TextField(
-              controller: _descriptionController,
-              maxLines: 3,
-              minLines: 1,
-              style: theme.textTheme.bodyMedium,
-              decoration: InputDecoration(
-                hintText: 'Añadir descripción o notas...',
-                prefixIcon: const Icon(Icons.notes_rounded),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide.none,
-                ),
-                filled: true,
-                fillColor: theme.colorScheme.surfaceContainerHighest.withValues(
-                  alpha: 0.5,
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  vertical: 12,
-                  horizontal: 16,
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Attachment
-            if (_selectedImagePath != null)
-              _AttachmentPreview(
-                value: _selectedImagePath!,
-                onRemove: () => setState(() => _selectedImagePath = null),
-              )
-            else
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final compact = constraints.maxWidth < 320;
-                  final actions = [
-                    _AttachmentAction(
-                      icon: Icons.add_photo_alternate_outlined,
-                      label: 'Foto',
-                      onTap: _pickImage,
-                    ),
-                    _AttachmentAction(
-                      icon: Icons.attach_file_rounded,
-                      label: 'Archivo',
-                      onTap: _pickFile,
-                    ),
-                    _AttachmentAction(
-                      icon: Icons.link_rounded,
-                      label: 'Link',
-                      onTap: _addLink,
-                    ),
-                  ];
-                  if (compact) {
-                    return Column(
-                      children: actions
-                          .map(
-                            (action) => Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: SizedBox(
-                                width: double.infinity,
-                                child: action,
-                              ),
-                            ),
-                          )
-                          .toList(),
-                    );
-                  }
-                  return Row(
-                    children: [
-                      for (var i = 0; i < actions.length; i++) ...[
-                        Expanded(child: actions[i]),
-                        if (i != actions.length - 1) const SizedBox(width: 10),
-                      ],
-                    ],
-                  );
-                },
-              ),
-            const SizedBox(height: 24),
-
-            // Category Selector
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: _categories.map((category) {
-                  final isSelected = _selectedCategory == category;
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 12),
-                    child: GestureDetector(
-                      onTap: () => setState(() => _selectedCategory = category),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? theme.colorScheme.primary
-                              : theme.colorScheme.surfaceContainerHighest,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: isSelected
-                                ? Colors.white
-                                : Colors.transparent,
-                            width: 2,
-                          ),
-                          boxShadow: isSelected
-                              ? [
-                                  BoxShadow(
-                                    color: theme.colorScheme.primary.withValues(
-                                      alpha: 0.4,
-                                    ),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 4),
-                                  ),
-                                ]
-                              : [],
-                        ),
-                        child: Text(
-                          category,
-                          style: const TextStyle(fontSize: 20),
+                // Header: "Nueva Tarea" lila + close circular.
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        isEditing ? 'Editar Tarea' : 'Nueva Tarea',
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: titleColor,
                         ),
                       ),
                     ),
-                  );
-                }).toList(),
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Energy Level
-            const Text(
-              'Nivel de Energía',
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: EnergyLevel.values.map((level) {
-                final isSelected = _selectedEnergy == level;
-                return Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: GestureDetector(
-                      onTap: () => setState(() => _selectedEnergy = level),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        height: 60,
+                    GestureDetector(
+                      onTap: () => Navigator.of(context).pop(),
+                      child: Container(
+                        width: 40,
+                        height: 40,
                         decoration: BoxDecoration(
-                          color: isSelected
-                              ? const Color(0xFF9FCFBB).withValues(alpha: 0.2)
-                              : Colors.grey.shade100,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: isSelected
-                                ? const Color(0xFF9FCFBB)
-                                : Colors.transparent,
-                            width: 3,
+                          color: fieldBg,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.close_rounded,
+                          color: muted,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+
+                // Título con botón mic.
+                TextField(
+                  controller: _titleController,
+                  autofocus: true,
+                  style: theme.textTheme.titleMedium,
+                  decoration: InputDecoration(
+                    hintText: '¿Qué hay que hacer?',
+                    filled: true,
+                    fillColor: fieldBg,
+                    suffixIcon: Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: GestureDetector(
+                        onTap: _onMicTap,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.primary.withValues(
+                              alpha: 0.20,
+                            ),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.mic_outlined,
+                            color: titleColor,
                           ),
                         ),
+                      ),
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(
+                        DesignTokens.radiusMedium,
+                      ),
+                      borderSide: BorderSide(color: fieldBorder, width: 2),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(
+                        DesignTokens.radiusMedium,
+                      ),
+                      borderSide: BorderSide(color: fieldBorder, width: 2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Descripción.
+                TextField(
+                  controller: _descriptionController,
+                  maxLines: 3,
+                  minLines: 1,
+                  style: theme.textTheme.bodyMedium,
+                  decoration: InputDecoration(
+                    hintText: 'Añadir descripción o notas...',
+                    filled: true,
+                    fillColor: fieldBg,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(
+                        DesignTokens.radiusMedium,
+                      ),
+                      borderSide: BorderSide(color: fieldBorder, width: 2),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(
+                        DesignTokens.radiusMedium,
+                      ),
+                      borderSide: BorderSide(color: fieldBorder, width: 2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Adjuntos.
+                if (_selectedImagePath != null)
+                  _AttachmentPreview(
+                    value: _selectedImagePath!,
+                    onRemove: () => setState(() => _selectedImagePath = null),
+                  )
+                else
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final compact = constraints.maxWidth < 320;
+                      final actions = [
+                        _AttachmentAction(
+                          icon: Icons.add_photo_alternate_outlined,
+                          label: 'Foto',
+                          onTap: _pickImage,
+                        ),
+                        _AttachmentAction(
+                          icon: Icons.attach_file_rounded,
+                          label: 'Archivo',
+                          onTap: _pickFile,
+                        ),
+                        _AttachmentAction(
+                          icon: Icons.link_rounded,
+                          label: 'Link',
+                          onTap: _addLink,
+                        ),
+                      ];
+                      if (compact) {
+                        return Column(
+                          children: actions
+                              .map(
+                                (action) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 10),
+                                  child: SizedBox(
+                                    width: double.infinity,
+                                    child: action,
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                        );
+                      }
+                      return Row(
+                        children: [
+                          for (var i = 0; i < actions.length; i++) ...[
+                            Expanded(child: actions[i]),
+                            if (i != actions.length - 1)
+                              const SizedBox(width: 10),
+                          ],
+                        ],
+                      );
+                    },
+                  ),
+                const SizedBox(height: 24),
+
+                // Categoría: carrusel horizontal.
+                Text(
+                  'Categoría'.toUpperCase(),
+                  style: theme.textTheme.labelMedium,
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 92,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _categoryOptions.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 12),
+                    itemBuilder: (context, index) {
+                      final option = _categoryOptions[index];
+                      final selected =
+                          _selectedCategory == option.prefix;
+                      return GestureDetector(
+                        onTap: () => setState(
+                          () => _selectedCategory = option.prefix,
+                        ),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          width: 80,
+                          decoration: BoxDecoration(
+                            color: selected
+                                ? theme.colorScheme.primary.withValues(
+                                    alpha: 0.20,
+                                  )
+                                : fieldBg,
+                            borderRadius: BorderRadius.circular(
+                              DesignTokens.radiusMedium,
+                            ),
+                            border: Border.all(
+                              color: selected
+                                  ? theme.colorScheme.primary
+                                  : fieldBorder,
+                              width: 2,
+                            ),
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                option.icon,
+                                color: selected ? titleColor : muted,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                option.label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: selected ? titleColor : muted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Grid 2 col: Prioridad + Energía.
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Prioridad'.toUpperCase(),
+                            style: theme.textTheme.labelMedium,
+                          ),
+                          const SizedBox(height: 10),
+                          Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: fieldBg,
+                              borderRadius: BorderRadius.circular(
+                                DesignTokens.radiusMedium,
+                              ),
+                              border: Border.all(
+                                color: fieldBorder,
+                                width: 2,
+                              ),
+                            ),
+                            child: Column(
+                              children: TaskPriority.values.map((priority) {
+                                final selected =
+                                    _selectedPriority == priority;
+                                return GestureDetector(
+                                  onTap: () => setState(
+                                    () => _selectedPriority = priority,
+                                  ),
+                                  child: Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 8,
+                                      horizontal: 12,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: selected
+                                          ? theme.colorScheme.primary
+                                              .withValues(alpha: 0.20)
+                                          : Colors.transparent,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            priority.priorityLabel,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: theme.textTheme.labelMedium
+                                                ?.copyWith(
+                                              color: selected
+                                                  ? titleColor
+                                                  : muted,
+                                            ),
+                                          ),
+                                        ),
+                                        Container(
+                                          width: 8,
+                                          height: 8,
+                                          decoration: BoxDecoration(
+                                            color: _priorityColor(context, priority),
+                                            shape: BoxShape.circle,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Energía'.toUpperCase(),
+                            style: theme.textTheme.labelMedium,
+                          ),
+                          const SizedBox(height: 10),
+                          Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: fieldBg,
+                              borderRadius: BorderRadius.circular(
+                                DesignTokens.radiusMedium,
+                              ),
+                              border: Border.all(
+                                color: fieldBorder,
+                                width: 2,
+                              ),
+                            ),
+                            child: Column(
+                              children: EnergyLevel.values.map((level) {
+                                final selected = _selectedEnergy == level;
+                                final activeColor = isDark
+                                    ? DesignTokens.mintStrong
+                                    : theme.colorScheme.secondary;
+                                return GestureDetector(
+                                  onTap: () => setState(
+                                    () => _selectedEnergy = level,
+                                  ),
+                                  child: Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 8,
+                                      horizontal: 12,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: selected
+                                          ? activeColor.withValues(alpha: 0.15)
+                                          : Colors.transparent,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.bolt,
+                                          size: 16,
+                                          color: selected
+                                              ? activeColor
+                                              : muted,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            _energyLabel(level),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: theme.textTheme.labelMedium
+                                                ?.copyWith(
+                                              color: selected
+                                                  ? activeColor
+                                                  : muted,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+
+                // Etiquetas.
+                TextField(
+                  controller: _labelsController,
+                  style: theme.textTheme.bodyMedium,
+                  decoration: InputDecoration(
+                    hintText: 'Etiquetas separadas por coma',
+                    prefixIcon: const Icon(Icons.sell_outlined),
+                    filled: true,
+                    fillColor: fieldBg,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(
+                        DesignTokens.radiusMedium,
+                      ),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Fecha y hora: pills.
+                Text(
+                  'Fecha y hora'.toUpperCase(),
+                  style: theme.textTheme.labelMedium,
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _DateTimePill(
+                        icon: Icons.calendar_month_outlined,
+                        label: _isToday(_selectedDate)
+                            ? 'Hoy'
+                            : '${_selectedDate.day}/${_selectedDate.month}',
+                        onTap: _pickDate,
+                        fieldBg: fieldBg,
+                        borderColor: fieldBorder,
+                        accent: titleColor,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _DateTimePill(
+                        icon: Icons.schedule_outlined,
+                        label: _selectedTime.format(context),
+                        onTap: _pickTime,
+                        fieldBg: fieldBg,
+                        borderColor: fieldBorder,
+                        accent: titleColor,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // Recordatorio + toggle.
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: fieldBg,
+                    borderRadius: BorderRadius.circular(
+                      DesignTokens.radiusMedium,
+                    ),
+                    border: Border.all(color: fieldBorder, width: 2),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primary.withValues(
+                            alpha: 0.20,
+                          ),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.notifications_active_outlined,
+                          color: titleColor,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
                         child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(
-                              Icons.bolt,
-                              color: isSelected
-                                  ? const Color(0xFF9FCFBB)
-                                  : Colors.grey,
+                            Text(
+                              'Recordatorio',
+                              style: theme.textTheme.titleSmall,
                             ),
                             Text(
-                              level.name.toUpperCase(),
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w800,
-                                color: isSelected
-                                    ? const Color(0xFF9FCFBB)
-                                    : Colors.grey,
-                              ),
+                              _reminderEnabled
+                                  ? '30 min antes'
+                                  : 'Desactivado',
+                              style: theme.textTheme.labelSmall,
                             ),
                           ],
                         ),
                       ),
-                    ),
+                      Switch(
+                        value: _reminderEnabled,
+                        onChanged: (value) =>
+                            setState(() => _reminderEnabled = value),
+                      ),
+                    ],
                   ),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 24),
+                ),
+                const SizedBox(height: 24),
 
-            const Text(
-              'Prioridad',
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: TaskPriority.values.map((priority) {
-                final selected = _selectedPriority == priority;
-                final color = _priorityColor(priority);
-                return ChoiceChip(
-                  label: Text(priority.priorityLabel),
-                  selected: selected,
-                  selectedColor: color.withValues(alpha: 0.18),
-                  labelStyle: TextStyle(
-                    color: selected ? color : Colors.grey.shade700,
-                    fontWeight: FontWeight.w700,
-                  ),
-                  onSelected: (_) =>
-                      setState(() => _selectedPriority = priority),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 24),
-
-            TextField(
-              controller: _labelsController,
-              decoration: InputDecoration(
-                hintText: 'Etiquetas separadas por coma',
-                prefixIcon: const Icon(Icons.sell_outlined),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide.none,
+                // CTA chunky compartido.
+                UniPrimaryButton(
+                  label: isEditing ? 'Guardar cambios' : 'Crear Tarea',
+                  onPressed: () => _saveTask(context, appState),
                 ),
-                filled: true,
-                fillColor: theme.colorScheme.surfaceContainerHighest.withValues(
-                  alpha: 0.5,
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Date Selection
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () async {
-                      final date = await showDatePicker(
-                        context: context,
-                        initialDate: _selectedDate,
-                        firstDate: DateTime.now(),
-                        lastDate: DateTime.now().add(const Duration(days: 365)),
-                      );
-                      if (date != null) {
-                        setState(() => _selectedDate = date);
-                      }
-                    },
-                    icon: const Icon(Icons.calendar_today, size: 18),
-                    label: Text(
-                      '${_selectedDate.day}/${_selectedDate.month}',
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      setState(
-                        () => _selectedDate = DateTime.now().add(
-                          const Duration(days: 1),
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.wb_sunny_outlined, size: 18),
-                    label: const Text(
-                      'Mañana',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                ),
+                const SizedBox(height: 20),
               ],
             ),
-            const SizedBox(height: 32),
-
-            // Submit Button
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => _saveTask(context, appState),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF9FCFBB),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  elevation: 4,
-                  shadowColor: const Color(0xFF9FCFBB).withValues(alpha: 0.4),
-                ),
-                child: Text(
-                  isEditing ? 'GUARDAR CAMBIOS' : 'CREAR TAREA',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 16,
-                    letterSpacing: 1,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-          ],
+          ),
         ),
       ),
-    )));
+    );
   }
 
-  void _saveTask(BuildContext context, AppState appState) {
-    if (_titleController.text.isEmpty) return;
+  void _onMicTap() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Usa el micrófono del teclado para dictar el título.'),
+      ),
+    );
+  }
 
-    final title = '$_selectedCategory ${_titleController.text}';
+  bool _isToday(DateTime date) {
+    final now = DateTime.now();
+    return date.year == now.year &&
+        date.month == now.month &&
+        date.day == now.day;
+  }
+
+  Future<void> _pickDate() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (date != null) {
+      setState(
+        () => _selectedDate = DateTime(
+          date.year,
+          date.month,
+          date.day,
+          _selectedTime.hour,
+          _selectedTime.minute,
+        ),
+      );
+    }
+  }
+
+  Future<void> _pickTime() async {
+    final time = await showTimePicker(
+      context: context,
+      initialTime: _selectedTime,
+    );
+    if (time != null) {
+      setState(() {
+        _selectedTime = time;
+        _selectedDate = DateTime(
+          _selectedDate.year,
+          _selectedDate.month,
+          _selectedDate.day,
+          time.hour,
+          time.minute,
+        );
+      });
+    }
+  }
+
+  Future<void> _saveTask(BuildContext context, AppState appState) async {
+    if (_titleController.text.trim().isEmpty) return;
+
+    final title = '$_selectedCategory ${_titleController.text.trim()}';
     final labels = _labelsController.text
         .split(',')
         .map((label) => label.trim())
         .where((label) => label.isNotEmpty)
         .toSet()
         .toList();
+    final description = _descriptionController.text.trim().isEmpty
+        ? null
+        : _descriptionController.text.trim();
 
     if (widget.initialTask != null) {
-      // Edit existing task
+      // Editar tarea existente.
       appState.updateTask(
         taskId: widget.initialTask!.id,
         title: title,
@@ -489,29 +742,36 @@ class _QuickTaskFormState extends State<QuickTaskForm> {
         priority: _selectedPriority,
         dueDate: _selectedDate,
         labels: labels,
-        description: _descriptionController.text.trim().isEmpty
-            ? null
-            : _descriptionController.text.trim(),
+        description: description,
         attachmentPath: _selectedImagePath,
+        silent: !_reminderEnabled,
       );
+      if (!_reminderEnabled) {
+        await NotificationService.cancelTaskReminder(
+          widget.initialTask!.id,
+        );
+      }
     } else {
-      // Create new task
+      // Crear tarea nueva.
       final project =
           widget.initialProject ?? appState.getOrCreateQuickTasksProject();
-      appState.addTask(
+      final created = appState.addTask(
         projectId: project.id,
         title: title,
         energy: _selectedEnergy,
         priority: _selectedPriority,
         dueDate: _selectedDate,
         labels: labels,
-        description: _descriptionController.text.trim().isEmpty
-            ? null
-            : _descriptionController.text.trim(),
+        description: description,
         attachmentPath: _selectedImagePath,
+        silent: !_reminderEnabled,
       );
+      if (!_reminderEnabled) {
+        await NotificationService.cancelTaskReminder(created.id);
+      }
     }
 
+    if (!context.mounted) return;
     Navigator.pop(context);
   }
 
@@ -559,17 +819,79 @@ class _QuickTaskFormState extends State<QuickTaskForm> {
     setState(() => _selectedImagePath = saved);
   }
 
-  Color _priorityColor(TaskPriority priority) {
+  String _energyLabel(EnergyLevel level) {
+    switch (level) {
+      case EnergyLevel.low:
+        return 'Baja';
+      case EnergyLevel.medium:
+        return 'Media';
+      case EnergyLevel.high:
+        return 'Alta';
+    }
+  }
+
+  Color _priorityColor(BuildContext context, TaskPriority priority) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     switch (priority) {
       case TaskPriority.low:
-        return Colors.green;
+        return DesignTokens.adaptiveMint(context);
       case TaskPriority.medium:
-        return const Color(0xFF0EA5E9);
+        return isDark ? DesignTokens.lilac : scheme.primary;
       case TaskPriority.high:
-        return Colors.orange;
+        return DesignTokens.priorityPink;
       case TaskPriority.urgent:
-        return Colors.red;
+        return scheme.error;
     }
+  }
+}
+
+class _DateTimePill extends StatelessWidget {
+  const _DateTimePill({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    required this.fieldBg,
+    required this.borderColor,
+    required this.accent,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final Color fieldBg;
+  final Color borderColor;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+        decoration: BoxDecoration(
+          color: fieldBg,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: borderColor, width: 2),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: accent),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleSmall,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../core/alarm_sounds.dart';
+import '../../core/constants.dart';
 import '../../core/design_tokens.dart';
+import '../../widgets/uni_supervisual.dart';
 import '../../services/notification_service.dart';
 import '../../state/app_state.dart';
 import '../../widgets/soft_page_route.dart';
@@ -227,6 +230,23 @@ class _ProfileHeroCard extends StatelessWidget {
                       ),
                     ),
                   ],
+                ),
+              ),
+              Semantics(
+                label:
+                    'Nivel ${appState.level}, ${appState.xpProgressPercent.round()}% al siguiente nivel',
+                child: UniRingProgress(
+                  progress: appState.xpProgressPercent / 100,
+                  size: 76,
+                  progressColor: scheme.primary,
+                  trackColor: scheme.onPrimaryContainer.withValues(alpha: 0.14),
+                  center: Text(
+                    '${appState.level}',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: scheme.onPrimaryContainer,
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -596,11 +616,55 @@ void _openAccountManager(BuildContext context, AppState appState) {
                                           profiles.length == 1
                                       ? null
                                       : IconButton(
-                                          icon: const Icon(
+                                          icon: Icon(
                                             Icons.delete_outline,
-                                            color: Colors.redAccent,
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.error,
                                           ),
-                                          onPressed: () {
+                                          onPressed: () async {
+                                            final confirmed =
+                                                await showDialog<bool>(
+                                                  context: context,
+                                                  builder: (dialogContext) =>
+                                                      AlertDialog(
+                                                        title: const Text(
+                                                          'Eliminar perfil',
+                                                        ),
+                                                        content: Text(
+                                                          '¿Seguro que quieres eliminar el perfil "${profile.name}"? Esta acción no se puede deshacer.',
+                                                        ),
+                                                        actions: [
+                                                          TextButton(
+                                                            onPressed: () =>
+                                                                Navigator.of(
+                                                                  dialogContext,
+                                                                ).pop(false),
+                                                            child: const Text(
+                                                              'Cancelar',
+                                                            ),
+                                                          ),
+                                                          FilledButton(
+                                                            style: FilledButton.styleFrom(
+                                                              backgroundColor:
+                                                                  Theme.of(
+                                                                        context,
+                                                                      )
+                                                                      .colorScheme
+                                                                      .error,
+                                                            ),
+                                                            onPressed: () =>
+                                                                Navigator.of(
+                                                                  dialogContext,
+                                                                ).pop(true),
+                                                            child: const Text(
+                                                              'Eliminar',
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                );
+                                            if (confirmed != true) return;
                                             appState.deleteUserProfile(
                                               profile.id,
                                             );
@@ -674,7 +738,7 @@ Future<String?> _promptProfileName(BuildContext context) async {
 }
 
 void _openSoundPicker(BuildContext context, AppState appState) {
-  final options = ['Clásico', 'Olas', 'Campana', 'Minimal'];
+  final options = AlarmSounds.options;
   showModalBottomSheet<void>(
     context: context,
     shape: const RoundedRectangleBorder(
@@ -701,38 +765,38 @@ void _openSoundPicker(BuildContext context, AppState appState) {
                   ),
                   radius: 28,
                   child: Column(
-                    children: options
-                        .map(
-                          (sound) => Column(
-                            children: [
-                              ListTile(
-                                contentPadding: EdgeInsets.zero,
-                                title: Text(sound),
-                                trailing: sound == appState.alarmSound
-                                    ? Icon(
-                                        Icons.check,
-                                        color: Theme.of(
-                                          sheetContext,
-                                        ).colorScheme.primary,
-                                      )
-                                    : null,
-                                onTap: () {
-                                  appState.setAlarmSound(sound);
-                                  Navigator.of(sheetContext).pop();
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'Sonido seleccionado: $sound',
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                              if (sound != options.last) const Divider(),
-                            ],
-                          ),
-                        )
-                        .toList(),
+                 children: options
+                     .map(
+                       (sound) => Column(
+                         children: [
+                           ListTile(
+                             contentPadding: EdgeInsets.zero,
+                             title: Text(sound.label),
+                             trailing: sound.label == appState.alarmSound
+                                 ? Icon(
+                                     Icons.check,
+                                     color: Theme.of(
+                                       sheetContext,
+                                     ).colorScheme.primary,
+                                   )
+                                 : null,
+                             onTap: () {
+                               appState.setAlarmSound(sound.label);
+                               Navigator.of(sheetContext).pop();
+                               ScaffoldMessenger.of(context).showSnackBar(
+                                 SnackBar(
+                                   content: Text(
+                                     'Sonido seleccionado: ${sound.label}',
+                                   ),
+                                 ),
+                               );
+                             },
+                           ),
+                           if (sound != options.last) const Divider(),
+                         ],
+                       ),
+                     )
+                     .toList(),
                   ),
                 ),
               ],
@@ -820,7 +884,7 @@ void _showAbout(BuildContext context) {
   showAboutDialog(
     context: context,
     applicationName: 'UniThrive',
-    applicationVersion: '1.0.0',
+    applicationVersion: Constants.appVersion,
     applicationIcon: const Icon(Icons.auto_stories_outlined),
     children: const [
       Text(

@@ -4,6 +4,8 @@ import 'dart:convert';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
+import '../../core/alarm_sounds.dart';
+import '../../core/constants.dart';
 import '../../core/design_tokens.dart';
 import '../../state/app_state.dart';
 import '../../widgets/uni_card.dart';
@@ -149,49 +151,6 @@ class SettingsScreen extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             const _SettingsSectionHeader(
-              title: 'Voz e IA',
-              subtitle:
-                  'Dictado local con mejora opcional vía endpoint seguro.',
-            ),
-            const SizedBox(height: 10),
-            UniCard(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-              child: Column(
-                children: [
-                  _SettingsActionTile(
-                    icon: Icons.hub_outlined,
-                    title: 'Endpoint IA seguro',
-                    subtitle: appState.voiceAiEndpointUrl.isEmpty
-                        ? 'Sin configurar. La app seguirá usando parser local.'
-                        : _voiceAiEndpointSubtitle(appState.voiceAiEndpointUrl),
-                    value: _voiceAiEndpointBadge(appState.voiceAiEndpointUrl),
-                    onTap: () => _showVoiceAiDialog(context, appState),
-                  ),
-                  const Divider(),
-                  _SettingsSwitchTile(
-                    icon: Icons.auto_awesome_rounded,
-                    title: 'Mejorar dictado con IA',
-                    subtitle: appState.voiceAiEndpointUrl.isEmpty
-                        ? 'Configura primero un endpoint antes de activarlo.'
-                        : 'Refina frases complejas sin exponer una API key en la app.',
-                    value: appState.voiceAiEnabled,
-                    onChanged: (value) {
-                      if (value && appState.voiceAiEndpointUrl.isEmpty) {
-                        _showVoiceAiDialog(
-                          context,
-                          appState,
-                          enableAfterSave: true,
-                        );
-                        return;
-                      }
-                      appState.setVoiceAiEnabled(value);
-                    },
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-            const _SettingsSectionHeader(
               title: 'Sonido',
               subtitle: 'Cómo se siente cada alarma o aviso.',
             ),
@@ -208,6 +167,50 @@ class SettingsScreen extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             const _SettingsSectionHeader(
+              title: 'Modo foco',
+              subtitle: 'Configura tus ciclos de Pomodoro.',
+            ),
+            const SizedBox(height: 10),
+            UniCard(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              child: Column(
+                children: [
+                  _SettingsActionTile(
+                    icon: Icons.timer_outlined,
+                    title: 'Duración de enfoque',
+                    subtitle: 'Minutos por ciclo de trabajo',
+                    value: '${appState.focusDurationMinutes} min',
+                    onTap: () => _showPomodoroDurationDialog(
+                      context,
+                      appState,
+                      isFocus: true,
+                    ),
+                  ),
+                  const Divider(),
+                  _SettingsActionTile(
+                    icon: Icons.spa_outlined,
+                    title: 'Duración del descanso',
+                    subtitle: 'Minutos de pausa entre ciclos',
+                    value: '${appState.breakDurationMinutes} min',
+                    onTap: () => _showPomodoroDurationDialog(
+                      context,
+                      appState,
+                      isFocus: false,
+                    ),
+                  ),
+                  const Divider(),
+                  _SettingsSwitchTile(
+                    icon: Icons.notifications_active_outlined,
+                    title: 'Sonido al terminar ciclo',
+                    subtitle: 'Aviso cuando termina un enfoque o descanso',
+                    value: appState.pomodoroEndSound,
+                    onChanged: appState.setPomodoroEndSound,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            const _SettingsSectionHeader(
               title: 'Avanzado',
               subtitle: 'Controles sensibles para reiniciar o limpiar.',
             ),
@@ -220,7 +223,7 @@ class SettingsScreen extends StatelessWidget {
                     icon: Icons.restart_alt_rounded,
                     title: 'Restaurar valores predeterminados',
                     subtitle: 'Mantiene tus tareas y proyectos',
-                    accentColor: Colors.orange,
+                    accentColor: DesignTokens.warning,
                     onTap: () => _confirmResetSettings(context, appState),
                   ),
                   const Divider(),
@@ -251,7 +254,7 @@ class SettingsScreen extends StatelessWidget {
                       const SizedBox(width: 14),
                       Expanded(
                         child: Text(
-                          'UniThrive 1.0.0',
+                          'UniThrive ${Constants.appVersion.split('+').first}',
                           style: theme.textTheme.titleLarge,
                         ),
                       ),
@@ -260,7 +263,7 @@ class SettingsScreen extends StatelessWidget {
                   const SizedBox(height: 18),
                   const _SettingsMetaRow(
                     label: 'Versión de la app',
-                    value: 'UniThrive 1.0.0',
+                    value: 'UniThrive ${Constants.appVersion}',
                   ),
                   const SizedBox(height: 10),
                   const _SettingsMetaRow(
@@ -348,7 +351,11 @@ class SettingsScreen extends StatelessWidget {
                 icon: const Icon(Icons.share),
                 label: const Text('Compartir'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF9FCFBB),
+                  backgroundColor: DesignTokens.adaptiveMint(context),
+                  foregroundColor:
+                      Theme.of(context).brightness == Brightness.dark
+                      ? const Color(0xFF002114)
+                      : Colors.white,
                 ),
               ),
             ],
@@ -398,7 +405,9 @@ class SettingsScreen extends StatelessWidget {
               ),
               ElevatedButton(
                 onPressed: () => Navigator.pop(context, true),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: DesignTokens.warning,
+                ),
                 child: const Text('Importar'),
               ),
             ],
@@ -412,7 +421,7 @@ class SettingsScreen extends StatelessWidget {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('✅ Datos importados exitosamente'),
-                backgroundColor: Colors.green,
+                backgroundColor: DesignTokens.success,
               ),
             );
           }
@@ -423,7 +432,7 @@ class SettingsScreen extends StatelessWidget {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('❌ Error al importar: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       }
@@ -445,20 +454,6 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  void _showVoiceAiDialog(
-    BuildContext context,
-    AppState appState, {
-    bool enableAfterSave = false,
-  }) {
-    showDialog(
-      context: context,
-      builder: (context) => SettingsVoiceAiDialog(
-        appState: appState,
-        enableAfterSave: enableAfterSave,
-      ),
-    );
-  }
-
   void _confirmResetSettings(BuildContext context, AppState appState) {
     showDialog(
       context: context,
@@ -472,26 +467,54 @@ class SettingsScreen extends StatelessWidget {
       builder: (context) => SettingsDeleteAllDataDialog(appState: appState),
     );
   }
-}
 
-String _voiceAiEndpointBadge(String endpointUrl) {
-  if (endpointUrl.trim().isEmpty) {
-    return 'Pendiente';
-  }
-  final uri = Uri.tryParse(endpointUrl.trim());
-  if (uri == null || uri.host.isEmpty) {
-    return 'Listo';
-  }
-  return uri.host;
-}
+  void _showPomodoroDurationDialog(
+    BuildContext context,
+    AppState appState, {
+    required bool isFocus,
+  }) {
+    final options = isFocus
+        ? [10, 15, 20, 25, 30, 45, 50, 60]
+        : [3, 5, 10, 15, 20];
+    final current = isFocus
+        ? appState.focusDurationMinutes
+        : appState.breakDurationMinutes;
 
-String _voiceAiEndpointSubtitle(String endpointUrl) {
-  final uri = Uri.tryParse(endpointUrl.trim());
-  if (uri == null) {
-    return 'Endpoint personalizado configurado.';
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(isFocus ? 'Duración de enfoque' : 'Duración del descanso'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: options.map((minutes) {
+              final isSelected = current == minutes;
+              return ListTile(
+                title: Text('$minutes minutos'),
+                leading: Icon(
+                  isSelected
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                  color: isSelected
+                      ? DesignTokens.adaptiveMint(context)
+                      : Colors.grey,
+                ),
+                onTap: () {
+                  if (isFocus) {
+                    appState.setFocusDurationMinutes(minutes);
+                  } else {
+                    appState.setBreakDurationMinutes(minutes);
+                  }
+                  Navigator.pop(dialogContext);
+                },
+              );
+            }).toList(),
+          ),
+        ),
+      ),
+    );
   }
-  final path = uri.path.isEmpty ? '/' : uri.path;
-  return '${uri.scheme}://${uri.host}${uri.hasPort ? ':${uri.port}' : ''}$path';
 }
 
 class _SettingsHeroCard extends StatelessWidget {
@@ -545,11 +568,9 @@ class _SettingsHeroCard extends StatelessWidget {
                 icon: Icons.music_note_outlined,
                 label: appState.alarmSound,
               ),
-              _SettingsPill(
-                icon: Icons.auto_awesome_rounded,
-                label: appState.voiceAiEnabled
-                    ? 'IA de voz activa'
-                    : 'Voz local',
+              const _SettingsPill(
+                icon: Icons.mic_rounded,
+                label: 'Voz local 100% offline',
               ),
             ],
           ),
@@ -982,7 +1003,9 @@ class SettingsReminderLeadDialog extends StatelessWidget {
                 isSelected
                     ? Icons.radio_button_checked
                     : Icons.radio_button_unchecked,
-                color: isSelected ? const Color(0xFF9FCFBB) : Colors.grey,
+                color: isSelected
+                    ? DesignTokens.adaptiveMint(context)
+                    : Colors.grey,
               ),
               onTap: () {
                 appState.setReminderLeadMinutes(minutes);
@@ -1003,7 +1026,7 @@ class SettingsAlarmSoundDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const sounds = ['Clásico', 'Suave', 'Digital', 'Campanas', 'Silencioso'];
+    final sounds = AlarmSounds.options;
 
     return AlertDialog(
       scrollable: true,
@@ -1013,160 +1036,23 @@ class SettingsAlarmSoundDialog extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: sounds.map((sound) {
-            final isSelected = appState.alarmSound == sound;
+            final isSelected = appState.alarmSound == sound.label;
             return ListTile(
-              title: Text(sound),
+              title: Text(sound.label),
               leading: Icon(
                 isSelected
                     ? Icons.radio_button_checked
                     : Icons.radio_button_unchecked,
-                color: isSelected ? const Color(0xFF9FCFBB) : Colors.grey,
+                color: isSelected
+                    ? DesignTokens.adaptiveMint(context)
+                    : Colors.grey,
               ),
               onTap: () {
-                appState.setAlarmSound(sound);
+                appState.setAlarmSound(sound.label);
                 Navigator.pop(context);
               },
             );
           }).toList(),
-        ),
-      ),
-    );
-  }
-}
-
-class SettingsVoiceAiDialog extends StatefulWidget {
-  const SettingsVoiceAiDialog({
-    super.key,
-    required this.appState,
-    this.enableAfterSave = false,
-  });
-
-  final AppState appState;
-  final bool enableAfterSave;
-
-  @override
-  State<SettingsVoiceAiDialog> createState() => _SettingsVoiceAiDialogState();
-}
-
-class _SettingsVoiceAiDialogState extends State<SettingsVoiceAiDialog> {
-  late final TextEditingController _endpointController;
-  late final TextEditingController _tokenController;
-  String? _validationMessage;
-
-  @override
-  void initState() {
-    super.initState();
-    _endpointController = TextEditingController(
-      text: widget.appState.voiceAiEndpointUrl,
-    );
-    _tokenController = TextEditingController(
-      text: widget.appState.voiceAiProxyToken,
-    );
-  }
-
-  @override
-  void dispose() {
-    _endpointController.dispose();
-    _tokenController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      scrollable: true,
-      title: const Text('Endpoint IA para voz'),
-      content: SizedBox(
-        width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'La app solo guarda la URL de tu proxy y, si quieres, un token de ese proxy. No pegues aquí una API key de OpenAI.',
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _endpointController,
-              keyboardType: TextInputType.url,
-              decoration: const InputDecoration(
-                labelText: 'URL del endpoint',
-                hintText: 'http://10.0.2.2:8787/parse',
-                prefixIcon: Icon(Icons.link_rounded),
-              ),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: _tokenController,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Token del proxy (opcional)',
-                hintText: 'Bearer del proxy, no la API key real',
-                prefixIcon: Icon(Icons.lock_outline_rounded),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Si borras la URL, la mejora con IA quedará desactivada y el dictado seguirá funcionando en modo local.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            if (_validationMessage != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                _validationMessage!,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: Colors.red),
-              ),
-            ],
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancelar'),
-        ),
-        ElevatedButton(onPressed: _save, child: const Text('Guardar')),
-      ],
-    );
-  }
-
-  void _save() {
-    final endpoint = _endpointController.text.trim();
-    final token = _tokenController.text.trim();
-
-    if (endpoint.isNotEmpty) {
-      final uri = Uri.tryParse(endpoint);
-      final isValid =
-          uri != null &&
-          uri.isAbsolute &&
-          (uri.scheme == 'http' || uri.scheme == 'https');
-      if (!isValid) {
-        setState(() {
-          _validationMessage =
-              'Usa una URL absoluta válida, por ejemplo http://10.0.2.2:8787/parse o https://tu-dominio/parse.';
-        });
-        return;
-      }
-    }
-
-    widget.appState.updateVoiceAiConfig(
-      endpointUrl: endpoint,
-      proxyToken: token,
-    );
-    if (widget.enableAfterSave && endpoint.isNotEmpty) {
-      widget.appState.setVoiceAiEnabled(true);
-    }
-
-    final messenger = ScaffoldMessenger.of(context);
-    Navigator.pop(context);
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          endpoint.isEmpty
-              ? 'Se desactivó el endpoint IA. El dictado seguirá en modo local.'
-              : 'Configuración IA guardada.',
         ),
       ),
     );
@@ -1200,7 +1086,9 @@ class SettingsResetDialog extends StatelessWidget {
               const SnackBar(content: Text('Configuración restaurada')),
             );
           },
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: DesignTokens.warning,
+          ),
           child: const Text('Restaurar'),
         ),
       ],
@@ -1237,13 +1125,15 @@ class SettingsDeleteAllDataDialog extends StatelessWidget {
             appState.deleteAllData();
             Navigator.pop(context);
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
+              SnackBar(
                 content: Text('Todos los datos han sido eliminados'),
-                backgroundColor: Colors.red,
+                backgroundColor: Theme.of(context).colorScheme.error,
               ),
             );
           },
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
           child: const Text('ELIMINAR TODO'),
         ),
       ],

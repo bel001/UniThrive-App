@@ -6,12 +6,8 @@ import 'design_tokens.dart';
 class UniThriveTheme {
   UniThriveTheme._();
 
-  // Legacy aliases kept to avoid breaking older utility code.
+  // Legacy alias kept to avoid breaking older utility code.
   static const Color primary = DesignTokens.accent;
-  static const Color duolingoGreen = Color(0xFF58CC02);
-  static const Color duolingoGold = Color(0xFFFFD700);
-  static const Color duolingoOrange = Color(0xFFFF9900);
-  static const Color duolingoBlue = Color(0xFF1CB0F6);
 
   static ThemeData get light => _buildTheme(Brightness.light);
   static ThemeData get dark => _buildTheme(Brightness.dark);
@@ -25,6 +21,7 @@ class UniThriveTheme {
       useMaterial3: true,
       brightness: brightness,
       colorScheme: scheme,
+      fontFamily: 'Lexend',
       scaffoldBackgroundColor: scheme.surface,
       canvasColor: scheme.surface,
       splashFactory: InkRipple.splashFactory,
@@ -61,13 +58,16 @@ class UniThriveTheme {
       cardTheme: CardThemeData(
         elevation: 0,
         margin: EdgeInsets.zero,
-        color: scheme.surfaceContainerLow,
+        color: isDark ? DesignTokens.cardDark : DesignTokens.cardBackground,
         shadowColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(DesignTokens.radiusLarge),
           side: BorderSide(
-            color: isDark ? DesignTokens.dividerDark : DesignTokens.divider,
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.10)
+                : DesignTokens.divider,
+            width: isDark ? 1 : 2,
           ),
         ),
       ),
@@ -75,13 +75,11 @@ class UniThriveTheme {
         style: ElevatedButton.styleFrom(
           minimumSize: const Size.fromHeight(54),
           backgroundColor: scheme.primary,
-          foregroundColor: isDark
-              ? DesignTokens.textPrimaryDark
-              : DesignTokens.textPrimary,
+          foregroundColor: Colors.white,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(DesignTokens.radiusMedium),
+            borderRadius: BorderRadius.circular(DesignTokens.radiusLarge),
           ),
           textStyle: textTheme.labelLarge,
         ),
@@ -90,12 +88,10 @@ class UniThriveTheme {
         style: OutlinedButton.styleFrom(
           minimumSize: const Size.fromHeight(54),
           foregroundColor: scheme.onSurface,
-          side: BorderSide(
-            color: isDark ? DesignTokens.dividerDark : DesignTokens.divider,
-          ),
+          side: BorderSide(color: scheme.primary, width: 2),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(DesignTokens.radiusMedium),
+            borderRadius: BorderRadius.circular(DesignTokens.radiusLarge),
           ),
           textStyle: textTheme.labelLarge,
         ),
@@ -104,26 +100,24 @@ class UniThriveTheme {
         style: FilledButton.styleFrom(
           minimumSize: const Size.fromHeight(54),
           backgroundColor: scheme.primary,
-          foregroundColor: isDark
-              ? DesignTokens.textPrimaryDark
-              : DesignTokens.textPrimary,
+          foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(DesignTokens.radiusMedium),
+            borderRadius: BorderRadius.circular(DesignTokens.radiusLarge),
           ),
           textStyle: textTheme.labelLarge,
         ),
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: scheme.primary,
-        foregroundColor: isDark
-            ? DesignTokens.textPrimaryDark
-            : DesignTokens.textPrimary,
+        foregroundColor: Colors.white,
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: scheme.surfaceContainerLow,
+        fillColor: isDark
+            ? DesignTokens.surfaceLowestDark
+            : DesignTokens.backgroundLight,
         hintStyle: textTheme.bodyMedium?.copyWith(
           color: scheme.onSurfaceVariant,
         ),
@@ -138,30 +132,45 @@ class UniThriveTheme {
           borderRadius: BorderRadius.circular(DesignTokens.radiusMedium),
           borderSide: BorderSide(
             color: isDark ? DesignTokens.dividerDark : DesignTokens.divider,
+            width: 2,
           ),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(DesignTokens.radiusMedium),
           borderSide: BorderSide(
             color: isDark ? DesignTokens.dividerDark : DesignTokens.divider,
+            width: 2,
           ),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(DesignTokens.radiusMedium),
-          borderSide: BorderSide(color: scheme.primary, width: 1.5),
+          borderSide: BorderSide(color: scheme.primary, width: 2),
         ),
       ),
       dialogTheme: DialogThemeData(
-        backgroundColor: scheme.surfaceContainerLow,
+        backgroundColor: isDark
+            ? DesignTokens.cardDarkAlt
+            : DesignTokens.cardBackground,
         surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(DesignTokens.radiusMedium),
+          side: BorderSide(
+            color: isDark
+                ? DesignTokens.dividerDark
+                : DesignTokens.divider,
+          ),
+        ),
       ),
       bottomSheetTheme: BottomSheetThemeData(
-        backgroundColor: scheme.surfaceContainerLow,
+        backgroundColor: isDark
+            ? DesignTokens.cardDarkAlt
+            : DesignTokens.cardBackground,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(DesignTokens.radiusXLarge),
+          ),
         ),
       ),
       dividerTheme: DividerThemeData(
@@ -172,7 +181,7 @@ class UniThriveTheme {
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         backgroundColor: isDark
-            ? const Color(0xFF182331)
+            ? DesignTokens.cardDarkAlt
             : const Color(0xFF1E293B),
         contentTextStyle: textTheme.bodyMedium?.copyWith(color: Colors.white),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -201,15 +210,35 @@ class UniThriveTheme {
         ),
       ),
       progressIndicatorTheme: ProgressIndicatorThemeData(
-        color: scheme.primary,
+        color: scheme.secondary,
         linearTrackColor: scheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(999),
       ),
+      chipTheme: scheme.brightness == Brightness.dark
+          ? ChipThemeData(
+              backgroundColor: DesignTokens.cardDark,
+              selectedColor: scheme.primary.withValues(alpha: 0.20),
+              labelStyle: textTheme.labelMedium,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(999),
+                side: const BorderSide(color: DesignTokens.dividerDark),
+              ),
+            )
+          : ChipThemeData(
+              backgroundColor: Colors.white,
+              selectedColor: DesignTokens.accentSoft,
+              labelStyle: textTheme.labelMedium,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(999),
+                side: const BorderSide(color: DesignTokens.divider),
+              ),
+            ),
     );
   }
 
+  /// Tipografía Lexend del sistema Vivid Academic.
   static TextTheme _textTheme(bool isDark) {
-    final base = isDark ? Typography.whiteCupertino : Typography.blackCupertino;
+    const family = 'Lexend';
     final primary = isDark
         ? DesignTokens.textPrimaryDark
         : DesignTokens.textPrimary;
@@ -217,70 +246,89 @@ class UniThriveTheme {
         ? DesignTokens.textSecondaryDark
         : DesignTokens.textSecondary;
 
-    return base.copyWith(
-      displayLarge: base.displayLarge?.copyWith(
-        fontSize: 34,
+    TextStyle style({
+      required double size,
+      required double height,
+      required FontWeight weight,
+      Color? color,
+      double? letterSpacing,
+    }) =>
+        TextStyle(
+          fontFamily: family,
+          fontSize: size,
+          height: height,
+          fontWeight: weight,
+          letterSpacing: letterSpacing,
+          color: color ?? primary,
+        );
+
+    return TextTheme(
+      displayLarge: style(
+        size: 48,
+        height: 56 / 48,
+        weight: FontWeight.w700,
+        letterSpacing: -0.96,
+      ),
+      displayMedium: style(
+        size: 34,
         height: 1.05,
+        weight: FontWeight.w700,
         letterSpacing: -1.0,
-        fontWeight: FontWeight.w700,
-        color: primary,
       ),
-      headlineMedium: base.headlineMedium?.copyWith(
-        fontSize: 28,
-        height: 1.1,
-        letterSpacing: -0.7,
-        fontWeight: FontWeight.w700,
-        color: primary,
+      headlineLarge: style(
+        size: 32,
+        height: 40 / 32,
+        weight: FontWeight.w600,
+        letterSpacing: -0.32,
       ),
-      headlineSmall: base.headlineSmall?.copyWith(
-        fontSize: 24,
+      headlineMedium: style(
+        size: 28,
+        height: 36 / 28,
+        weight: FontWeight.w600,
+      ),
+      headlineSmall: style(
+        size: 24,
         height: 1.15,
+        weight: FontWeight.w700,
         letterSpacing: -0.5,
-        fontWeight: FontWeight.w700,
-        color: primary,
       ),
-      titleLarge: base.titleLarge?.copyWith(
-        fontSize: 21,
-        letterSpacing: -0.35,
-        fontWeight: FontWeight.w700,
-        color: primary,
+      titleLarge: style(size: 21, height: 1.2, weight: FontWeight.w700),
+      titleMedium: style(
+        size: 20,
+        height: 28 / 20,
+        weight: FontWeight.w600,
       ),
-      titleMedium: base.titleMedium?.copyWith(
-        fontSize: 18,
-        letterSpacing: -0.2,
-        fontWeight: FontWeight.w600,
-        color: primary,
-      ),
-      titleSmall: base.titleSmall?.copyWith(
-        fontSize: 15,
-        letterSpacing: -0.1,
-        fontWeight: FontWeight.w600,
-        color: primary,
-      ),
-      bodyLarge: base.bodyLarge?.copyWith(
-        fontSize: 16,
-        height: 1.35,
-        color: primary,
-      ),
-      bodyMedium: base.bodyMedium?.copyWith(
-        fontSize: 14,
-        height: 1.45,
+      titleSmall: style(size: 15, height: 1.3, weight: FontWeight.w600),
+      bodyLarge: style(size: 18, height: 28 / 18, weight: FontWeight.w400),
+      bodyMedium: style(
+        size: 16,
+        height: 24 / 16,
+        weight: FontWeight.w400,
         color: secondary,
       ),
-      bodySmall: base.bodySmall?.copyWith(
-        fontSize: 12,
+      bodySmall: style(
+        size: 12,
         height: 1.35,
+        weight: FontWeight.w400,
         color: secondary,
       ),
-      labelLarge: base.labelLarge?.copyWith(
-        fontSize: 15,
+      labelLarge: style(
+        size: 15,
+        height: 1.3,
+        weight: FontWeight.w600,
         letterSpacing: -0.1,
-        fontWeight: FontWeight.w600,
-        color: primary,
       ),
-      labelMedium: base.labelMedium?.copyWith(
-        fontSize: 12,
-        fontWeight: FontWeight.w600,
+      labelMedium: style(
+        size: 14,
+        height: 20 / 14,
+        weight: FontWeight.w600,
+        letterSpacing: 0.28,
+        color: secondary,
+      ),
+      labelSmall: style(
+        size: 12,
+        height: 16 / 12,
+        weight: FontWeight.w500,
         color: secondary,
       ),
     );
@@ -288,71 +336,71 @@ class UniThriveTheme {
 
   static const ColorScheme _lightScheme = ColorScheme(
     brightness: Brightness.light,
-    primary: DesignTokens.accent,
-    onPrimary: DesignTokens.textPrimary,
-    primaryContainer: DesignTokens.accentSoft,
-    onPrimaryContainer: DesignTokens.textPrimary,
-    secondary: Color(0xFF0F766E),
+    primary: DesignTokens.accentStrong,
+    onPrimary: Colors.white,
+    primaryContainer: DesignTokens.accent,
+    onPrimaryContainer: Color(0xFFDAD7FF),
+    secondary: Color(0xFF006C4C),
     onSecondary: Colors.white,
-    secondaryContainer: Color(0xFFE6F4F1),
-    onSecondaryContainer: DesignTokens.textPrimary,
-    tertiary: Color(0xFFE8A34D),
+    secondaryContainer: DesignTokens.mint,
+    onSecondaryContainer: Color(0xFF007351),
+    tertiary: Color(0xFF434851),
     onTertiary: Colors.white,
-    tertiaryContainer: Color(0xFFFFF1DE),
-    onTertiaryContainer: DesignTokens.textPrimary,
+    tertiaryContainer: Color(0xFFDEE2ED),
+    onTertiaryContainer: Color(0xFF171C23),
     error: DesignTokens.error,
     onError: Colors.white,
-    errorContainer: Color(0xFFFEE4E2),
-    onErrorContainer: Color(0xFF7A271A),
+    errorContainer: Color(0xFFFFDAD6),
+    onErrorContainer: Color(0xFF93000A),
     surface: DesignTokens.backgroundLight,
     onSurface: DesignTokens.textPrimary,
     surfaceContainerLowest: Color(0xFFFFFFFF),
     surfaceContainerLow: Color(0xFFFFFFFF),
-    surfaceContainer: Color(0xFFFAFBFC),
+    surfaceContainer: Color(0xFFF3F4F5),
     surfaceContainerHigh: DesignTokens.surfaceVariant,
-    surfaceContainerHighest: Color(0xFFE9EEF3),
+    surfaceContainerHighest: Color(0xFFE1E3E4),
     onSurfaceVariant: DesignTokens.textSecondary,
     outline: DesignTokens.divider,
-    outlineVariant: Color(0xFFE7ECF1),
+    outlineVariant: Color(0xFFC7C4D8),
     shadow: DesignTokens.shadow,
     scrim: Color(0x33000000),
-    inverseSurface: Color(0xFF111827),
-    onInverseSurface: Colors.white,
-    inversePrimary: Color(0xFFA7D6C7),
+    inverseSurface: Color(0xFF2E3132),
+    onInverseSurface: Color(0xFFF0F1F2),
+    inversePrimary: DesignTokens.lilac,
   );
 
   static const ColorScheme _darkScheme = ColorScheme(
     brightness: Brightness.dark,
-    primary: Color(0xFF8BC7B1),
-    onPrimary: Color(0xFF092016),
-    primaryContainer: Color(0xFF16372D),
-    onPrimaryContainer: Color(0xFFD9F2E8),
-    secondary: Color(0xFF76D2C7),
-    onSecondary: Color(0xFF072B2B),
-    secondaryContainer: Color(0xFF123D3F),
-    onSecondaryContainer: Color(0xFFD8F5F0),
-    tertiary: Color(0xFFFFC47E),
-    onTertiary: Color(0xFF3D2405),
-    tertiaryContainer: Color(0xFF5C3B12),
-    onTertiaryContainer: Color(0xFFFFE4BF),
-    error: Color(0xFFFF8A80),
-    onError: Color(0xFF680003),
-    errorContainer: Color(0xFF81252A),
+    primary: DesignTokens.accentVivid,
+    onPrimary: Colors.white,
+    primaryContainer: DesignTokens.accent,
+    onPrimaryContainer: Color(0xFFDAD7FF),
+    secondary: DesignTokens.mint,
+    onSecondary: Color(0xFF002114),
+    secondaryContainer: Color(0xFF00A572),
+    onSecondaryContainer: Color(0xFF00311F),
+    tertiary: DesignTokens.warningDark,
+    onTertiary: Color(0xFF4F2500),
+    tertiaryContainer: Color(0xFFD97721),
+    onTertiaryContainer: Color(0xFFFFDCC5),
+    error: DesignTokens.errorDark,
+    onError: Color(0xFF690005),
+    errorContainer: DesignTokens.errorContainerDark,
     onErrorContainer: Color(0xFFFFDAD6),
     surface: DesignTokens.backgroundDark,
     onSurface: DesignTokens.textPrimaryDark,
-    surfaceContainerLowest: Color(0xFF0F151E),
+    surfaceContainerLowest: DesignTokens.surfaceLowestDark,
     surfaceContainerLow: DesignTokens.cardDark,
-    surfaceContainer: Color(0xFF141D28),
+    surfaceContainer: DesignTokens.cardDarkAlt,
     surfaceContainerHigh: DesignTokens.surfaceVariantDark,
-    surfaceContainerHighest: Color(0xFF223041),
+    surfaceContainerHighest: Color(0xFF34343D),
     onSurfaceVariant: DesignTokens.textSecondaryDark,
     outline: DesignTokens.dividerDark,
-    outlineVariant: Color(0xFF1D2939),
+    outlineVariant: Color(0xFF464554),
     shadow: Colors.black,
     scrim: Color(0x66000000),
-    inverseSurface: Color(0xFFF2F4F7),
-    onInverseSurface: Color(0xFF111827),
+    inverseSurface: Color(0xFFE4E1ED),
+    onInverseSurface: Color(0xFF303038),
     inversePrimary: DesignTokens.accentStrong,
   );
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/design_tokens.dart';
 import '../models/mascot_state.dart';
 
 class MascotWidget extends StatefulWidget {
@@ -79,19 +80,19 @@ class _MascotWidgetState extends State<MascotWidget>
     switch (widget.state.mood) {
       case MascotMood.happy:
       case MascotMood.excited:
-        return const Color(0xFF9FCFBB);
+        return DesignTokens.mintStrong;
       case MascotMood.encouraging:
-        return const Color(0xFF4CAF50);
+        return DesignTokens.success;
       case MascotMood.celebrating:
-        return const Color(0xFFFFB300);
+        return DesignTokens.warning;
       case MascotMood.thinking:
-        return const Color(0xFF2196F3);
+        return DesignTokens.info;
       case MascotMood.sleeping:
-        return const Color(0xFF9E9E9E);
+        return DesignTokens.textDisabled;
       case MascotMood.sad:
-        return const Color(0xFF607D8B);
+        return DesignTokens.dividerDark;
       case MascotMood.worried:
-        return const Color(0xFFFF6B6B);
+        return DesignTokens.mascotCoral;
     }
   }
 

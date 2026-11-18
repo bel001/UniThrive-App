@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../core/design_tokens.dart';
 import '../models/subtask.dart';
 
 class SubtaskListWidget extends StatefulWidget {
@@ -57,15 +58,17 @@ class _SubtaskListWidgetState extends State<SubtaskListWidget> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF9FCFBB).withValues(alpha: 0.2),
+                  color: DesignTokens.adaptiveMint(
+                    context,
+                  ).withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
                   '${widget.subtasks.where((s) => s.completed).length}/${widget.subtasks.length}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF9FCFBB),
+                    color: DesignTokens.adaptiveMint(context),
                   ),
                 ),
               ),
@@ -83,9 +86,10 @@ class _SubtaskListWidgetState extends State<SubtaskListWidget> {
                   : widget.subtasks.where((s) => s.completed).length /
                         widget.subtasks.length,
               minHeight: 8,
-              backgroundColor: Colors.grey.shade200,
-              valueColor: const AlwaysStoppedAnimation<Color>(
-                Color(0xFF9FCFBB),
+              backgroundColor:
+                  Theme.of(context).colorScheme.surfaceContainerHighest,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                DesignTokens.adaptiveMint(context),
               ),
             ),
           ),
@@ -113,7 +117,7 @@ class _SubtaskListWidgetState extends State<SubtaskListWidget> {
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 16),
         decoration: BoxDecoration(
-          color: Colors.red,
+          color: Theme.of(context).colorScheme.error,
           borderRadius: BorderRadius.circular(12),
         ),
         child: const Icon(Icons.delete, color: Colors.white),
@@ -131,7 +135,9 @@ class _SubtaskListWidgetState extends State<SubtaskListWidget> {
               ),
               TextButton(
                 onPressed: () => Navigator.pop(context, true),
-                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                style: TextButton.styleFrom(
+                  foregroundColor: Theme.of(context).colorScheme.error,
+                ),
                 child: const Text('Eliminar'),
               ),
             ],
@@ -144,12 +150,12 @@ class _SubtaskListWidgetState extends State<SubtaskListWidget> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: subtask.completed
-              ? Colors.green.shade50
+              ? DesignTokens.success.withValues(alpha: 0.12)
               : theme.colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: subtask.completed
-                ? Colors.green.withValues(alpha: 0.3)
+                ? DesignTokens.success.withValues(alpha: 0.3)
                 : Colors.transparent,
           ),
         ),
@@ -240,7 +246,7 @@ class _SubtaskListWidgetState extends State<SubtaskListWidget> {
         color: theme.colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: const Color(0xFF9FCFBB).withValues(alpha: 0.3),
+          color: DesignTokens.mintStrong.withValues(alpha: 0.3),
           width: 1.5,
         ),
       ),
@@ -265,7 +271,7 @@ class _SubtaskListWidgetState extends State<SubtaskListWidget> {
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.send, size: 20, color: Color(0xFF9FCFBB)),
+            icon: const Icon(Icons.send, size: 20, color: DesignTokens.mintStrong),
             onPressed: () {
               if (_newSubtaskController.text.isNotEmpty) {
                 widget.onAdd(_newSubtaskController.text);
@@ -306,10 +312,15 @@ class _SubtaskListWidgetState extends State<SubtaskListWidget> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.delete, color: Colors.red),
-              title: const Text(
+              leading: Icon(
+                Icons.delete,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              title: Text(
                 'Eliminar',
-                style: TextStyle(color: Colors.red),
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.error,
+                ),
               ),
               onTap: () {
                 Navigator.pop(context);

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/design_tokens.dart';
 import '../models/schedule.dart';
 import '../models/task.dart';
 
@@ -104,7 +105,7 @@ class SmartPlanner {
                 end: blockEnd,
                 category: ScheduleCategory.task,
                 linkedTaskId: task.id,
-                color: const Color(0xFF9FCFBB),
+                color: DesignTokens.mintStrong,
               ),
             );
 

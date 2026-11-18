@@ -1,8 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
-import '../../core/constants.dart';
 import '../../core/design_tokens.dart';
 import '../../state/app_state.dart';
 import '../../widgets/uni_card.dart';
@@ -245,10 +245,11 @@ class _FocusTimerScreenState extends State<FocusTimerScreen> {
   }
 
   void _startPhase(_TimerPhase phase) {
+    final appState = _appState;
     _phase = phase;
     _total = phase == _TimerPhase.focus
-        ? Constants.focusDuration
-        : Constants.breakDuration;
+        ? (appState?.focusDuration ?? const Duration(minutes: 25))
+        : (appState?.breakDuration ?? const Duration(minutes: 5));
     _remaining = _total;
     _restartTicker();
     setState(() {});
@@ -260,6 +261,9 @@ class _FocusTimerScreenState extends State<FocusTimerScreen> {
     _ticker = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_remaining.inSeconds == 0) {
         timer.cancel();
+        if (_appState?.pomodoroEndSound ?? true) {
+          SystemSound.play(SystemSoundType.alert);
+        }
         if (_phase == _TimerPhase.focus) {
           _startPhase(_TimerPhase.breakTime);
         } else {
